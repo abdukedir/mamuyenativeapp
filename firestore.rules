@@ -1,0 +1,256 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc(request.auth.uid).data.role == 'admin'
+        && userDoc(request.auth.uid).data.isActive == true;
+    }
+
+    function allowedSelfCreate(uid) {
+      return isOwner(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role in ['sales', 'stock_manager']
+        && request.resource.data.isVerified == false
+        && request.resource.data.isActive == true
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'email',
+          'fullName',
+          'phone',
+          'role',
+          'profileImage',
+          'isVerified',
+          'isActive',
+          'createdAt',
+          'updatedAt'
+        ]);
+    }
+
+    function allowedSelfUpdate(uid) {
+      return isOwner(uid)
+        && resource.data.role == request.resource.data.role
+        && resource.data.isActive == request.resource.data.isActive
+        && request.resource.data.uid == uid
+        && request.resource.data.email == resource.data.email
+        && (
+          request.resource.data.isVerified == resource.data.isVerified
+          || (request.auth.token.email_verified == true && request.resource.data.isVerified == true)
+        )
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'fullName',
+          'phone',
+          'profileImage',
+          'isVerified',
+          'updatedAt'
+        ]);
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if allowedSelfCreate(uid) || isAdmin();
+      allow update: if allowedSelfUpdate(uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    function isActiveUser() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc(request.auth.uid).data.isActive == true;
+    }
+
+    function hasRole(role) {
+      return isActiveUser() && userDoc(request.auth.uid).data.role == role;
+    }
+
+    function canManageProducts() {
+      return hasRole('stock_manager') || isAdmin();
+    }
+
+    function allowedCategoryCreate() {
+      return canManageProducts()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.accent is string
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'accent',
+          'createdBy',
+          'createdAt',
+          'updatedAt'
+        ]);
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isActiveUser();
+      allow create: if allowedCategoryCreate() || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    function allowedProductCreate() {
+      return canManageProducts()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerName == userDoc(request.auth.uid).data.fullName
+        && request.resource.data.categoryId is string
+        && request.resource.data.categoryName is string
+        && request.resource.data.categoryAccent is string
+        && request.resource.data.barcode is string
+        && request.resource.data.costPrice is number
+        && request.resource.data.costPrice >= 0
+        && request.resource.data.price is number
+        && request.resource.data.price > 0
+        && request.resource.data.stock is int
+        && request.resource.data.stock >= 0
+        && request.resource.data.isActive == true
+        && request.resource.data.status == 'active'
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'sku',
+          'categoryId',
+          'categoryName',
+          'categoryAccent',
+          'barcode',
+          'costPrice',
+          'price',
+          'stock',
+          'description',
+          'ownerId',
+          'ownerName',
+          'isActive',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ]);
+    }
+
+    function allowedProductOwnerUpdate() {
+      return canManageProducts()
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.ownerName == resource.data.ownerName
+        && request.resource.data.categoryId is string
+        && request.resource.data.categoryName is string
+        && request.resource.data.categoryAccent is string
+        && request.resource.data.barcode is string
+        && request.resource.data.costPrice is number
+        && request.resource.data.costPrice >= 0
+        && request.resource.data.price is number
+        && request.resource.data.price > 0
+        && request.resource.data.stock is int
+        && request.resource.data.stock >= 0
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'name',
+          'sku',
+          'categoryId',
+          'categoryName',
+          'categoryAccent',
+          'barcode',
+          'costPrice',
+          'price',
+          'stock',
+          'description',
+          'isActive',
+          'status',
+          'updatedAt'
+        ]);
+    }
+
+    function allowedSalesStockOut() {
+      return hasRole('sales')
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['stock', 'updatedAt'])
+        && request.resource.data.stock is int
+        && request.resource.data.stock < resource.data.stock
+        && request.resource.data.stock >= 0;
+    }
+
+    match /products/{productId} {
+      allow read: if isActiveUser();
+      allow create: if allowedProductCreate() || isAdmin();
+      allow update: if allowedProductOwnerUpdate() || allowedSalesStockOut() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    function canRegisterExpense() {
+      return isActiveUser() && (hasRole('stock_manager') || isAdmin());
+    }
+
+    function allowedExpenseCreate() {
+      return canRegisterExpense()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.status == 'approved'
+        && request.resource.data.keys().hasOnly([
+          'title',
+          'amount',
+          'note',
+          'status',
+          'createdBy',
+          'createdByName',
+          'createdAt'
+        ]);
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isActiveUser();
+      allow create: if allowedExpenseCreate() || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    function canSellProducts() {
+      return isActiveUser() && (hasRole('sales') || isAdmin());
+    }
+
+    function allowedSaleCreate() {
+      return canSellProducts()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.productId is string
+        && request.resource.data.quantity is int
+        && request.resource.data.quantity > 0
+        && request.resource.data.unitPrice is number
+        && request.resource.data.unitCost is number
+        && request.resource.data.totalRevenue is number
+        && request.resource.data.totalCost is number
+        && request.resource.data.profit is number
+        && request.resource.data.keys().hasOnly([
+          'productId',
+          'productName',
+          'barcode',
+          'quantity',
+          'unitPrice',
+          'unitCost',
+          'totalRevenue',
+          'totalCost',
+          'profit',
+          'createdBy',
+          'createdByName',
+          'createdAt'
+        ]);
+    }
+
+    match /sales/{saleId} {
+      allow read: if isActiveUser();
+      allow create: if allowedSaleCreate() || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

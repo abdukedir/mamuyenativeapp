@@ -1,11 +1,15 @@
-import { ActionScreen } from '@/components/inventory/action-screen';
+import { router } from 'expo-router';
+import { Alert } from 'react-native';
+
+import { BarcodeScannerView } from '@/components/inventory/barcode-scanner-view';
 
 export default function ScanScreen() {
   return (
-    <ActionScreen
-      title="Scan"
-      description="Barcode scanning action is ready for camera integration."
-      activeTab="products"
+    <BarcodeScannerView
+      onCancel={() => router.back()}
+      onScanned={(value) => {
+        Alert.alert('Code scanned', value, [{ text: 'OK', onPress: () => router.back() }]);
+      }}
     />
   );
 }

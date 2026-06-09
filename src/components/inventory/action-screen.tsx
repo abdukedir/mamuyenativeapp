@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 type ActionScreenProps = {
   title: string;
   description: string;
-  activeTab?: 'home' | 'products' | 'alerts' | 'more';
+  activeTab?: 'home' | 'products' | 'expenses' | 'more';
   children?: ReactNode;
 };
 

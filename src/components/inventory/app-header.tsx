@@ -8,7 +8,7 @@ import { useTheme } from '@/hooks/use-theme';
 type AppHeaderProps = {
   title: string;
   left?: 'menu' | 'back';
-  right?: 'search' | 'filter' | 'bell';
+  right?: 'search' | 'filter' | 'bell' | 'none';
   badge?: number;
   onLeftPress?: () => void;
   onRightPress?: () => void;
@@ -17,7 +17,7 @@ type AppHeaderProps = {
 export function AppHeader({
   title,
   left = 'menu',
-  right = 'bell',
+  right = 'none',
   badge,
   onLeftPress,
   onRightPress,
@@ -38,14 +38,18 @@ export function AppHeader({
         {title}
       </ThemedText>
 
-      <Pressable onPress={handleRightPress} style={styles.rightWrap}>
-        <RightIcon color={theme.text} size={23} strokeWidth={2.2} />
-        {!!badge && (
-          <View style={styles.badge}>
-            <ThemedText style={styles.badgeText}>{badge}</ThemedText>
-          </View>
-        )}
-      </Pressable>
+      {right === 'none' ? (
+        <View style={styles.rightWrap} />
+      ) : (
+        <Pressable onPress={handleRightPress} style={styles.rightWrap}>
+          <RightIcon color={theme.text} size={23} strokeWidth={2.2} />
+          {!!badge && (
+            <View style={styles.badge}>
+              <ThemedText style={styles.badgeText}>{badge}</ThemedText>
+            </View>
+          )}
+        </Pressable>
+      )}
     </View>
   );
 }

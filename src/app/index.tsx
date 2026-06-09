@@ -2,12 +2,12 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import {
   BarChart3,
-  Bell,
   CheckCircle2,
   CircleX,
   Box,
   DollarSign,
   Plus,
+  ReceiptText,
   ScanLine,
   TriangleAlert,
 } from 'lucide-react-native';
@@ -17,26 +17,30 @@ import { BottomNav } from '@/components/inventory/bottom-nav';
 import { MobileShell } from '@/components/inventory/mobile-shell';
 import { ProductArtwork } from '@/components/inventory/product-artwork';
 import { ThemedText } from '@/components/themed-text';
-import { categorySummaries } from '@/constants/inventory-data';
-
-const stats = [
-  { label: 'In Stock', value: '96', Icon: CheckCircle2, color: '#20bf6b', bg: '#eafaf0' },
-  { label: 'Low Stock', value: '18', Icon: TriangleAlert, color: '#ff8a00', bg: '#fff2e4' },
-  { label: 'Out of Stock', value: '14', Icon: CircleX, color: '#f04452', bg: '#feecee' },
-  { label: 'Total Value', value: '$45,680', Icon: DollarSign, color: '#0878ff', bg: '#eaf2ff' },
-];
+import { useCategories } from '@/hooks/useCategories';
+import { useProducts } from '@/hooks/useProducts';
+import { formatProductPrice } from '@/types/product';
 
 const actions = [
   { label: 'Add Item', Icon: Plus, color: '#0878ff', bg: '#eaf2ff', href: '/add-product' },
-  { label: 'Scan', Icon: ScanLine, color: '#16a34a', bg: '#eafaf0', href: '/scan' },
+  { label: 'Sales', Icon: ScanLine, color: '#16a34a', bg: '#eafaf0', href: '/sales' },
   { label: 'Reports', Icon: BarChart3, color: '#7c3aed', bg: '#f1e9ff', href: '/reports' },
-  { label: 'Alerts', Icon: Bell, color: '#f97316', bg: '#fff0e5', href: '/alerts' },
+  { label: 'Expense', Icon: ReceiptText, color: '#f97316', bg: '#fff0e5', href: '/expense' },
 ];
 
 export default function DashboardScreen() {
+  const { error, loading, products, stats } = useProducts();
+  const { categories } = useCategories();
+  const dashboardStats = [
+    { label: 'In Stock', value: String(stats.inStockProducts), Icon: CheckCircle2, color: '#20bf6b', bg: '#eafaf0' },
+    { label: 'Low Stock', value: String(stats.lowStockProducts), Icon: TriangleAlert, color: '#ff8a00', bg: '#fff2e4' },
+    { label: 'Out of Stock', value: String(stats.outOfStockProducts), Icon: CircleX, color: '#f04452', bg: '#feecee' },
+    { label: 'Total Value', value: formatProductPrice(stats.totalValue), Icon: DollarSign, color: '#0878ff', bg: '#eaf2ff' },
+  ];
+
   return (
     <MobileShell>
-      <AppHeader title="Dashboard" right="bell" badge={2} />
+      <AppHeader title="Dashboard" right="none" />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
@@ -44,7 +48,7 @@ export default function DashboardScreen() {
         <View style={styles.hero}>
           <View>
             <ThemedText style={styles.heroLabel}>Total Items</ThemedText>
-            <ThemedText style={styles.heroValue}>128</ThemedText>
+            <ThemedText style={styles.heroValue}>{loading ? '...' : stats.totalItems}</ThemedText>
           </View>
           <View style={styles.heroCube}>
             <Box color="#8fc3ff" size={62} strokeWidth={1.9} />
@@ -52,7 +56,7 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.statGrid}>
-          {stats.map(({ Icon, ...stat }) => (
+          {dashboardStats.map(({ Icon, ...stat }) => (
             <View key={stat.label} style={styles.statCard}>
               <View style={[styles.statIcon, { backgroundColor: stat.bg }]}>
                 <Icon color={stat.color} size={24} strokeWidth={2.4} />
@@ -69,17 +73,25 @@ export default function DashboardScreen() {
           Categories
         </ThemedText>
         <View style={styles.categoryGrid}>
-          {categorySummaries.map((category) => (
+          {categories.map((category) => {
+            const count = products.filter((product) => product.categoryId === category.id).length;
+
+            return (
             <Pressable
-              key={category.slug}
-              onPress={() => router.push(`/category/${category.slug}` as never)}
+              key={category.id}
+              onPress={() => router.push(`/category/${category.id}` as never)}
               style={styles.categoryCard}>
-              <ProductArtwork category={category.slug} accent={category.accent} size="small" />
+              <ProductArtwork category={category.id} accent={category.accent} size="small" />
               <ThemedText style={styles.categoryName}>{category.name}</ThemedText>
-              <ThemedText style={styles.categoryCount}>{category.items}</ThemedText>
+              <ThemedText style={styles.categoryCount}>{count}</ThemedText>
             </Pressable>
-          ))}
+            );
+          })}
         </View>
+        {!categories.length && !loading ? (
+          <ThemedText style={styles.emptyText}>Create a category before adding products.</ThemedText>
+        ) : null}
+        {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
 
         <ThemedText type="smallBold" style={styles.sectionTitle}>
           Quick Actions
@@ -210,6 +222,18 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 24,
     fontWeight: '800',
+  },
+  errorText: {
+    color: '#d92d20',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  emptyText: {
+    color: '#667085',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
   },
   actionGrid: {
     flexDirection: 'row',

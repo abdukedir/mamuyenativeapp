@@ -5,7 +5,7 @@ export default function AlertsScreen() {
     <ActionScreen
       title="Alerts"
       description="Low-stock alerts and new-sale notifications will appear here."
-      activeTab="alerts"
+      activeTab="more"
     />
   );
 }

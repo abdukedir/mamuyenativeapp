@@ -7,15 +7,16 @@ import { MobileShell } from '@/components/inventory/mobile-shell';
 import { ProductRow } from '@/components/inventory/product-row';
 import { SearchBar } from '@/components/inventory/search-bar';
 import { ThemedText } from '@/components/themed-text';
-import { CategorySlug, getCategory, getProductsByCategory } from '@/constants/inventory-data';
-
-const allowedSlugs = ['tv', 'speakers', 'refrigerators', 'accessories'];
+import { useCategories } from '@/hooks/useCategories';
+import { useProducts } from '@/hooks/useProducts';
 
 export default function CategoryProductsScreen() {
   const params = useLocalSearchParams<{ slug: string }>();
-  const slug = allowedSlugs.includes(params.slug ?? '') ? (params.slug as CategorySlug) : 'tv';
-  const category = getCategory(slug);
-  const products = getProductsByCategory(slug);
+  const { categories } = useCategories();
+  const category = categories.find((item) => item.id === params.slug);
+  const categoryId = params.slug ?? '';
+  const { error, loading, getProductsByCategory } = useProducts();
+  const products = getProductsByCategory(categoryId);
 
   return (
     <MobileShell>
@@ -42,10 +43,11 @@ export default function CategoryProductsScreen() {
         {!products.length && (
           <View style={styles.empty}>
             <ThemedText type="small" themeColor="textSecondary">
-              No products found.
+              {loading ? 'Loading products...' : 'No products found.'}
             </ThemedText>
           </View>
         )}
+        {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
       </ScrollView>
       <BottomNav active="products" />
     </MobileShell>
@@ -69,5 +71,11 @@ const styles = StyleSheet.create({
     height: 120,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  errorText: {
+    color: '#d92d20',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
   },
 });

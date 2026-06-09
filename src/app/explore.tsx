@@ -8,11 +8,15 @@ import { MobileShell } from '@/components/inventory/mobile-shell';
 import { ProductArtwork } from '@/components/inventory/product-artwork';
 import { SearchBar } from '@/components/inventory/search-bar';
 import { ThemedText } from '@/components/themed-text';
-import { categorySummaries } from '@/constants/inventory-data';
+import { useCategories } from '@/hooks/useCategories';
+import { useProducts } from '@/hooks/useProducts';
 
 const filters = ['All', 'TV', 'Speakers', 'Refrigerators', 'Accessories'];
 
 export default function ProductsScreen() {
+  const { error, loading, products } = useProducts();
+  const { categories } = useCategories();
+
   return (
     <MobileShell>
       <AppHeader title="Products" right="search" />
@@ -38,25 +42,36 @@ export default function ProductsScreen() {
         </ScrollView>
 
         <View style={styles.list}>
-          {categorySummaries.map((category) => (
+          {categories.map((category) => {
+            const categoryProducts = products.filter((product) => product.categoryId === category.id);
+            const inStock = categoryProducts.reduce((sum, product) => sum + product.stock, 0);
+
+            return (
             <Pressable
-              key={category.slug}
-              onPress={() => router.push(`/category/${category.slug}` as never)}
+              key={category.id}
+              onPress={() => router.push(`/category/${category.id}` as never)}
               style={styles.categoryRow}>
-              <ProductArtwork category={category.slug} accent={category.accent} />
+              <ProductArtwork category={category.id} accent={category.accent} />
               <View style={styles.categoryInfo}>
                 <ThemedText type="smallBold" style={styles.categoryTitle}>
                   {category.name}
                 </ThemedText>
-                <ThemedText style={styles.itemCount}>{category.items} Items</ThemedText>
+                <ThemedText style={styles.itemCount}>
+                  {loading ? 'Loading' : `${categoryProducts.length} Products`}
+                </ThemedText>
               <ThemedText type="smallBold" style={styles.stock}>
-                In Stock: {category.inStock}
+                In Stock: {loading ? '...' : inStock}
               </ThemedText>
             </View>
               <ChevronRight color="#10172a" size={18} strokeWidth={2.4} />
             </Pressable>
-          ))}
+            );
+          })}
         </View>
+        {!categories.length && !loading ? (
+          <ThemedText style={styles.errorText}>No categories yet. A stock manager or admin must create one first.</ThemedText>
+        ) : null}
+        {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
       </ScrollView>
       <BottomNav active="products" />
     </MobileShell>
@@ -136,5 +151,11 @@ const styles = StyleSheet.create({
     color: '#059447',
     fontSize: 14,
     lineHeight: 18,
+  },
+  errorText: {
+    color: '#d92d20',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
   },
 });

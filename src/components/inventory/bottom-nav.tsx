@@ -1,28 +1,44 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { Bell, Home, MoreHorizontal, Package, Plus } from 'lucide-react-native';
+import { Home, MoreHorizontal, Package, Plus, ReceiptText } from 'lucide-react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/use-theme';
 
-type ActiveTab = 'home' | 'products' | 'alerts' | 'more';
+type ActiveTab = 'home' | 'products' | 'expenses' | 'more';
 
 const tabs = [
   { id: 'home', label: 'Home', Icon: Home, href: '/' },
   { id: 'products', label: 'Products', Icon: Package, href: '/explore' },
-  { id: 'alerts', label: 'Alerts', Icon: Bell, href: '/alerts' },
+  { id: 'expenses', label: 'Expense', Icon: ReceiptText, href: '/expense' },
   { id: 'more', label: 'More', Icon: MoreHorizontal, href: '/more' },
 ] as const;
 
 export function BottomNav({ active }: { active: ActiveTab }) {
   const theme = useTheme();
+  const { userProfile } = useAuth();
+  const canAddProduct = userProfile?.role === 'admin' || userProfile?.role === 'stock_manager';
+
+  function handleAddProduct() {
+    if (!canAddProduct) {
+      Alert.alert('Permission required', 'Only stock managers and admins can add products.');
+      return;
+    }
+
+    router.push('/add-product');
+  }
 
   return (
     <View style={styles.wrap}>
       {tabs.slice(0, 2).map((tab) => (
         <NavItem key={tab.id} tab={tab} active={active === tab.id} color={theme.text} />
       ))}
-      <Pressable onPress={() => router.push('/add-product')} style={styles.addButton}>
+      <Pressable
+        accessibilityLabel="Add product"
+        accessibilityRole="button"
+        onPress={handleAddProduct}
+        style={[styles.addButton, !canAddProduct && styles.addButtonDisabled]}>
         <Plus color="#fff" size={34} strokeWidth={2.2} />
       </Pressable>
       {tabs.slice(2).map((tab) => (
@@ -44,7 +60,7 @@ function NavItem({
   const Icon = tab.Icon;
 
   return (
-    <Pressable onPress={() => router.push(tab.href)} style={styles.item}>
+    <Pressable onPress={() => router.push(tab.href as never)} style={styles.item}>
       <Icon color={active ? '#0878ff' : color} size={22} strokeWidth={active ? 2.6 : 2.1} />
       <ThemedText style={[styles.label, active && styles.activeLabel]}>{tab.label}</ThemedText>
     </Pressable>
@@ -87,5 +103,9 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     elevation: 8,
+  },
+  addButtonDisabled: {
+    backgroundColor: '#98a2b3',
+    shadowOpacity: 0.08,
   },
 });
