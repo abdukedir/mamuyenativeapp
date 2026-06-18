@@ -41,11 +41,12 @@ export function subscribeToCategories(
 export async function createCategory(values: CategoryFormValues, owner: UserProfile) {
   const now = serverTimestamp() as Timestamp;
 
-  await addDoc(categoriesRef, {
+  const created = await addDoc(categoriesRef, {
     name: cleanText(values.name),
     accent: values.accent || categoryAccentOptions[0],
     createdBy: owner.uid,
     createdAt: now,
     updatedAt: now,
   });
+  return created.id;
 }

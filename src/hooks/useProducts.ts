@@ -4,6 +4,31 @@ import { useActivities } from '@/hooks/useActivities';
 import { subscribeToProducts } from '@/services/productService';
 import type { Product } from '@/types/product';
 
+function getProductStock(product: Product) {
+  return Number(product.stock) || 0;
+}
+
+function getProductPurchasePrice(product: Product) {
+  const legacyProduct = product as Product & {
+    buyingPrice?: number;
+    purchasePrice?: number;
+    purchasingPrice?: number;
+  };
+
+  return (
+    Number(product.costPrice) ||
+    Number(legacyProduct.purchasePrice) ||
+    Number(legacyProduct.purchasingPrice) ||
+    Number(legacyProduct.buyingPrice) ||
+    Number(product.price) ||
+    0
+  );
+}
+
+function isVisibleProduct(product: Product) {
+  return product.isActive !== false && product.status !== 'archived';
+}
+
 export function useProducts() {
   const { totals } = useActivities();
   const [products, setProducts] = useState<Product[]>([]);
@@ -13,7 +38,7 @@ export function useProducts() {
   useEffect(() => {
     const unsubscribe = subscribeToProducts(
       (items) => {
-        setProducts(items.filter((product) => product.isActive && product.status === 'active'));
+        setProducts(items.filter(isVisibleProduct));
         setError(null);
         setLoading(false);
       },
@@ -27,12 +52,18 @@ export function useProducts() {
   }, []);
 
   const stats = useMemo(() => {
-    const totalItems = products.reduce((sum, product) => sum + product.stock, 0);
-    const inStockProducts = products.filter((product) => product.stock > 0).length;
-    const lowStockProducts = products.filter((product) => product.stock > 0 && product.stock <= 5).length;
-    const outOfStockProducts = products.filter((product) => product.stock === 0).length;
-    const inventoryValue = products.reduce((sum, product) => sum + product.stock * product.price, 0);
-    const totalValue = inventoryValue - totals.totalExpenses;
+    const totalItems = products.reduce((sum, product) => sum + getProductStock(product), 0);
+    const inStockProducts = products.filter((product) => getProductStock(product) > 0).length;
+    const lowStockProducts = products.filter((product) => {
+      const stock = getProductStock(product);
+      return stock > 0 && stock <= 5;
+    }).length;
+    const outOfStockProducts = products.filter((product) => getProductStock(product) === 0).length;
+    const inventoryValue = products.reduce(
+      (sum, product) => sum + getProductStock(product) * getProductPurchasePrice(product),
+      0
+    );
+    const totalValue = inventoryValue;
 
     return {
       totalItems,

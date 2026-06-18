@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { UserRole } from '@/types/user';
 
-export const userRoles = ['sales', 'stock_manager'] as const satisfies readonly UserRole[];
+export const userRoles = ['admin', 'member', 'manager', 'salesperson'] as const satisfies readonly UserRole[];
 
 const emailSchema = z
   .string()
@@ -10,6 +10,14 @@ const emailSchema = z
   .toLowerCase()
   .email('Enter a valid email address')
   .max(254, 'Email is too long');
+
+const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, 'Username must be at least 3 characters')
+  .max(30, 'Username must be 30 characters or fewer')
+  .regex(/^[a-z0-9_]+$/, 'Use lowercase letters, numbers, and underscores only');
 
 const fullNameSchema = z
   .string()
@@ -30,10 +38,11 @@ const passwordSchema = z
 export const registerSchema = z
   .object({
     fullName: fullNameSchema,
+    username: usernameSchema,
     email: emailSchema,
     password: passwordSchema,
     confirmPassword: z.string().min(1, 'Confirm your password'),
-    role: z.enum(userRoles, { error: 'Choose a role' }),
+    role: z.enum(userRoles),
   })
   .refine((values) => values.password === values.confirmPassword, {
     message: 'Passwords do not match',
@@ -41,12 +50,12 @@ export const registerSchema = z
   });
 
 export const loginSchema = z.object({
-  email: emailSchema,
+  username: usernameSchema,
   password: z.string().min(1, 'Enter your password'),
 });
 
 export const forgotPasswordSchema = z.object({
-  email: emailSchema,
+  username: usernameSchema,
 });
 
 export type RegisterFormValues = z.infer<typeof registerSchema>;

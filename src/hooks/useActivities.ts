@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { subscribeToExpenses, subscribeToSales } from '@/services/activityService';
-import type { Expense, Sale } from '@/types/activity';
+import { subscribeToExpenses, subscribeToSaleItems, subscribeToSales } from '@/services/activityService';
+import type { Expense, Sale, SaleItem } from '@/types/activity';
 
 export function useActivities() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,10 +24,18 @@ export function useActivities() {
       },
       (snapshotError) => setError(snapshotError.message)
     );
+    const unsubscribeSaleItems = subscribeToSaleItems(
+      (items) => {
+        setSaleItems(items);
+        setError(null);
+      },
+      (snapshotError) => setError(snapshotError.message)
+    );
 
     return () => {
       unsubscribeExpenses();
       unsubscribeSales();
+      unsubscribeSaleItems();
     };
   }, []);
 
@@ -38,5 +47,5 @@ export function useActivities() {
     return { totalExpenses, totalSales, totalProfit };
   }, [expenses, sales]);
 
-  return { expenses, sales, totals, error };
+  return { expenses, saleItems, sales, totals, error };
 }

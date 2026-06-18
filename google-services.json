@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "750425842477",
+    "project_id": "mamuyenativeapp",
+    "storage_bucket": "mamuyenativeapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:750425842477:android:d0b991ed05ba21db21e9a4",
+        "android_client_info": {
+          "package_name": "abdu_Mamuye.com"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBw267Ouayi5sb2Fvtk85b2zy2ZvEccZnY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

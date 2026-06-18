@@ -18,8 +18,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "abdu_Mamuye.com",
-      "googleServicesFile": "./android/app/google-services.json"
+      "package": "abdu.mamuye.com",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "output": "static",
@@ -43,11 +46,26 @@
         {
           "cameraPermission": "Allow Mamuye to scan product barcodes."
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0878ff",
+          "defaultChannel": "stock-alerts"
+        }
+      ],
+      "expo-secure-store",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "69e65e98-2e88-4be8-8e9d-ce54aa0ba9e9"
+      }
     }
   }
 }

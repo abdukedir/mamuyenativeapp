@@ -43,3 +43,9 @@ example
 # generated native folders
 /ios
 /android
+
+# generated archives and hosting output
+*.zip
+.firebase/
+.expo-check/
+y/

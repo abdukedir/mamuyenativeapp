@@ -1,0 +1,14 @@
+mutation SeedData @transaction {
+  category_insertMany(data: [
+    { name: "Electronics" },
+    { name: "Furniture" }
+  ])
+  location_insertMany(data: [
+    { name: "Warehouse A" },
+    { name: "Storefront 1" }
+  ])
+  supplier_insertMany(data: [
+    { name: "Tech Corp", contactEmail: "sales@techcorp.com" },
+    { name: "Office Depot", contactEmail: "orders@officedepot.com" }
+  ])
+}

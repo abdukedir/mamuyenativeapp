@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   createContext,
@@ -13,52 +12,25 @@ import { firebaseAuth } from '@/config/firebase';
 import {
   loginWithEmail,
   logoutUser,
-  registerWithEmail,
   reloadUserAndSyncVerification,
   sendVerificationEmail,
   sendPasswordReset,
 } from '@/services/authService';
-import { getUserProfile, syncUserVerification } from '@/services/userService';
+import {
+  createDefaultAdminProfileForAuthUser,
+  getUserProfile,
+  syncUserVerification,
+} from '@/services/userService';
+import { safeLogActivity } from '@/services/businessService';
+import { registerForPushNotifications } from '@/services/notificationService';
 import type { AuthContextValue } from '@/types/auth';
 import type { UserProfile } from '@/types/user';
 import type {
   ForgotPasswordFormValues,
   LoginFormValues,
-  RegisterFormValues,
 } from '@/validations/authSchemas';
 
-const USER_PROFILE_CACHE_KEY = '@mamuye/auth/user-profile';
-
 export const AuthContext = createContext<AuthContextValue | null>(null);
-
-async function clearProfileCache() {
-  await AsyncStorage.removeItem(USER_PROFILE_CACHE_KEY);
-}
-
-async function cacheProfile(profile: UserProfile | null) {
-  if (!profile) {
-    await clearProfileCache();
-    return;
-  }
-
-  const createdAt =
-    typeof profile.createdAt.toDate === 'function'
-      ? profile.createdAt.toDate().toISOString()
-      : new Date().toISOString();
-  const updatedAt =
-    typeof profile.updatedAt.toDate === 'function'
-      ? profile.updatedAt.toDate().toISOString()
-      : new Date().toISOString();
-
-  await AsyncStorage.setItem(
-    USER_PROFILE_CACHE_KEY,
-    JSON.stringify({
-      ...profile,
-      createdAt,
-      updatedAt,
-    })
-  );
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -69,19 +41,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadUserProfile = useCallback(async (authUser: User | null) => {
     if (!authUser) {
       setUserProfile(null);
-      await clearProfileCache();
       return;
     }
 
-    const profile = await getUserProfile(authUser.uid);
+    let profile = await getUserProfile(authUser.uid);
 
-    if (profile && profile.isVerified !== authUser.emailVerified) {
-      await syncUserVerification(authUser.uid, authUser.emailVerified);
-      profile.isVerified = authUser.emailVerified;
+    if (!profile) {
+      profile = await createDefaultAdminProfileForAuthUser(authUser);
+    }
+
+    if (profile && authUser.emailVerified && !profile.isVerified) {
+      await syncUserVerification(authUser.uid, true);
+      profile.isVerified = true;
     }
 
     setUserProfile(profile);
-    await cacheProfile(profile);
+    if (profile?.isActive) {
+      await registerForPushNotifications(profile).catch(() => undefined);
+    }
   }, []);
 
   useEffect(() => {
@@ -108,21 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const authUser = await loginWithEmail(values);
         setUser(authUser);
         await loadUserProfile(authUser);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [loadUserProfile]
-  );
-
-  const register = useCallback(
-    async (values: RegisterFormValues) => {
-      setLoading(true);
-
-      try {
-        const authUser = await registerWithEmail(values);
-        setUser(authUser);
-        await loadUserProfile(authUser);
+        const profile = await getUserProfile(authUser.uid);
+        await safeLogActivity(profile, 'login');
       } finally {
         setLoading(false);
       }
@@ -134,14 +98,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
 
     try {
-      await logoutUser();
+      const profile = userProfile;
       setUser(null);
       setUserProfile(null);
-      await clearProfileCache();
+      await safeLogActivity(profile, 'logout');
+      await logoutUser();
     } finally {
+      setUser(null);
+      setUserProfile(null);
       setLoading(false);
     }
-  }, []);
+  }, [userProfile]);
 
   const resetPassword = useCallback(async (values: ForgotPasswordFormValues) => {
     await sendPasswordReset(values);
@@ -163,7 +130,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!currentUser) {
       setUser(null);
       setUserProfile(null);
-      await clearProfileCache();
       return;
     }
 
@@ -179,7 +145,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       initialized,
       login,
-      register,
       logout,
       resetPassword,
       resendEmailVerification,
@@ -191,7 +156,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       initialized,
       login,
-      register,
       logout,
       resetPassword,
       resendEmailVerification,

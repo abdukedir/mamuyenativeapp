@@ -1,13 +1,10 @@
 import {
   type ActionCodeSettings,
-  createUserWithEmailAndPassword,
-  deleteUser,
   reload,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
-  updateProfile,
   type User,
 } from 'firebase/auth';
 
@@ -15,13 +12,8 @@ import { firebaseAuth } from '@/config/firebase';
 import type {
   ForgotPasswordFormValues,
   LoginFormValues,
-  RegisterFormValues,
 } from '@/validations/authSchemas';
-import { createUserProfile, syncUserVerification } from './userService';
-
-function cleanText(value: string) {
-  return value.trim().replace(/\s+/g, ' ');
-}
+import { getUsernameEmail, syncUserVerification } from './userService';
 
 function cleanEmail(value: string) {
   return value.trim().toLowerCase();
@@ -38,33 +30,17 @@ export async function sendVerificationEmail(user: User) {
   await sendEmailVerification(user, verificationActionCodeSettings);
 }
 
-export async function registerWithEmail(values: RegisterFormValues) {
-  const email = cleanEmail(values.email);
-  const fullName = cleanText(values.fullName);
-  const credential = await createUserWithEmailAndPassword(firebaseAuth, email, values.password);
+export async function loginWithEmail(values: LoginFormValues) {
+  const username = values.username.trim().toLowerCase();
+  const email = await getUsernameEmail(username);
 
-  try {
-    await updateProfile(credential.user, { displayName: fullName });
-    await createUserProfile({
-      uid: credential.user.uid,
-      email,
-      fullName,
-      role: values.role,
-      isVerified: credential.user.emailVerified,
-    });
-    await sendVerificationEmail(credential.user);
-  } catch (error) {
-    await deleteUser(credential.user).catch(() => undefined);
-    throw error;
+  if (!email) {
+    throw new Error('No account was found for this username.');
   }
 
-  return credential.user;
-}
-
-export async function loginWithEmail(values: LoginFormValues) {
   const credential = await signInWithEmailAndPassword(
     firebaseAuth,
-    cleanEmail(values.email),
+    cleanEmail(email),
     values.password
   );
   return credential.user;
@@ -75,10 +51,18 @@ export async function logoutUser() {
 }
 
 export async function sendPasswordReset(values: ForgotPasswordFormValues) {
-  await sendPasswordResetEmail(firebaseAuth, cleanEmail(values.email));
+  const email = await getUsernameEmail(values.username);
+
+  if (!email) {
+    throw new Error('No account was found for this username.');
+  }
+
+  await sendPasswordResetEmail(firebaseAuth, cleanEmail(email));
 }
 
 export async function reloadUserAndSyncVerification(user: User) {
   await reload(user);
-  await syncUserVerification(user.uid, user.emailVerified);
+  if (user.emailVerified) {
+    await syncUserVerification(user.uid, true);
+  }
 }

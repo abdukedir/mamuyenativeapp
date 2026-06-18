@@ -5,14 +5,16 @@ import { Alert, StyleSheet, View } from 'react-native';
 
 import { AuthButton } from '@/components/auth/AuthButton';
 import { AuthInput } from '@/components/auth/AuthInput';
+import { LanguageSelector } from '@/components/auth/LanguageSelector';
 import { PasswordInput } from '@/components/auth/PasswordInput';
-import { ThemedText } from '@/components/themed-text';
+import { useTranslation } from '@/hooks/useAppSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { getFirebaseErrorMessage } from '@/utils/firebaseErrors';
 import { loginSchema, type LoginFormValues } from '@/validations/authSchemas';
 import { AuthScreenFrame } from './AuthScreenFrame';
 
 export function LoginScreen() {
+  const t = useTranslation();
   const { login, loading } = useAuth();
   const {
     control,
@@ -20,33 +22,33 @@ export function LoginScreen() {
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { username: '', password: '' },
   });
 
   const onSubmit = handleSubmit(async (values) => {
     try {
       await login(values);
     } catch (error) {
-      Alert.alert('Sign in failed', getFirebaseErrorMessage(error));
+      Alert.alert(t('signInFailed'), getFirebaseErrorMessage(error));
     }
   });
 
   return (
-    <AuthScreenFrame title="Welcome back" subtitle="Sign in to manage products, orders, and deliveries.">
+    <AuthScreenFrame title={t('welcomeBack')} subtitle={t('loginSubtitle')}>
       <View style={styles.form}>
+        <LanguageSelector />
         <Controller
           control={control}
-          name="email"
+          name="username"
           render={({ field: { onBlur, onChange, value } }) => (
             <AuthInput
-              autoComplete="email"
-              error={errors.email?.message}
-              keyboardType="email-address"
-              label="Email"
+              autoComplete="username"
+              error={errors.username?.message}
+              label={t('username')}
               onBlur={onBlur}
               onChangeText={onChange}
-              placeholder="you@example.com"
-              textContentType="emailAddress"
+              placeholder={t('enterUsername')}
+              textContentType="username"
               value={value}
             />
           )}
@@ -57,24 +59,18 @@ export function LoginScreen() {
           render={({ field: { onBlur, onChange, value } }) => (
             <PasswordInput
               error={errors.password?.message}
-              label="Password"
+              label={t('password')}
               onBlur={onBlur}
               onChangeText={onChange}
-              placeholder="Enter your password"
+              placeholder={t('password')}
               value={value}
             />
           )}
         />
         <Link href={'/forgot-password' as never} style={styles.forgot}>
-          Forgot password?
+          {t('forgotPassword')}
         </Link>
-        <AuthButton title="Sign in" loading={loading || isSubmitting} onPress={onSubmit} />
-      </View>
-      <View style={styles.footer}>
-        <ThemedText style={styles.footerText}>New to Mamuye?</ThemedText>
-        <Link href={'/register' as never} style={styles.link}>
-          Create account
-        </Link>
+        <AuthButton title={t('signIn')} loading={loading || isSubmitting} onPress={onSubmit} />
       </View>
     </AuthScreenFrame>
   );
@@ -89,17 +85,6 @@ const styles = StyleSheet.create({
     color: '#0878ff',
     fontSize: 14,
     fontWeight: '800',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  footerText: {
-    color: '#667085',
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '600',
   },
   link: {
     color: '#0878ff',

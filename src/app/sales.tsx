@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { Minus, Plus, ScanLine, ShoppingCart } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AuthButton } from '@/components/auth/AuthButton';
 import { AuthInput } from '@/components/auth/AuthInput';
@@ -12,20 +13,79 @@ import { MobileShell } from '@/components/inventory/mobile-shell';
 import { ThemedText } from '@/components/themed-text';
 import { useActivities } from '@/hooks/useActivities';
 import { useAuth } from '@/hooks/useAuth';
+import { useMoneyFormatter, useTranslation } from '@/hooks/useAppSettings';
 import { useProducts } from '@/hooks/useProducts';
 import { checkoutProducts } from '@/services/productService';
-import { formatProductPrice, type Product } from '@/types/product';
+import type { Product } from '@/types/product';
+import { canAccessAllApp, isSalesperson } from '@/types/user';
 import { getFirebaseErrorMessage } from '@/utils/firebaseErrors';
+
+function normalizeBarcode(value: string) {
+  return value.trim().replace(/\s+/g, '').toLowerCase();
+}
+
+function barcodeMatches(productBarcode: string, scannedBarcode: string) {
+  const productCode = normalizeBarcode(productBarcode);
+  const scannedCode = normalizeBarcode(scannedBarcode);
+
+  return (
+    productCode === scannedCode ||
+    productCode.replace(/^0+/, '') === scannedCode.replace(/^0+/, '')
+  );
+}
+
+function createReceiptText(input: {
+  cashier: string;
+  items: { product: Product; quantity: number }[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  formatMoney: (value: number) => string;
+}) {
+  const lines = input.items.map(
+    ({ product, quantity }) =>
+      `${product.name} x ${quantity} = ${input.formatMoney(product.price * quantity)}`
+  );
+
+  return [
+    'Mamuye receipt',
+    `Date: ${new Date().toLocaleString()}`,
+    `Cashier: ${input.cashier}`,
+    '',
+    ...lines,
+    '',
+    `Subtotal: ${input.formatMoney(input.subtotal)}`,
+    `Discount: ${input.formatMoney(input.discount)}`,
+    `Total: ${input.formatMoney(input.total)}`,
+  ].join('\n');
+}
 
 export default function SalesScreen() {
   const { userProfile } = useAuth();
-  const { products } = useProducts();
-  const { totals } = useActivities();
+  const t = useTranslation();
+  const formatMoney = useMoneyFormatter();
+  const { error: productsError, products } = useProducts();
+  const { expenses, sales, totals } = useActivities();
   const [scannerOpen, setScannerOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [discountAmount, setDiscountAmount] = useState('');
   const [lastScannedProduct, setLastScannedProduct] = useState<Product | null>(null);
-  const canSell = userProfile?.role === 'sales' || userProfile?.role === 'admin';
+  const [checkingOut, setCheckingOut] = useState(false);
+  const canSell = canAccessAllApp(userProfile);
+  const salesperson = isSalesperson(userProfile);
+  const visibleSalesTotals = useMemo(() => {
+    if (!salesperson || !userProfile) {
+      return totals;
+    }
+
+    const ownSales = sales.filter((sale) => sale.createdBy === userProfile.uid);
+    return {
+      totalExpenses: expenses.filter((expense) => expense.createdBy === userProfile.uid).reduce((sum, expense) => sum + expense.amount, 0),
+      totalSales: ownSales.reduce((sum, sale) => sum + sale.totalRevenue, 0),
+      totalProfit: ownSales.reduce((sum, sale) => sum + sale.profit, 0),
+    };
+  }, [expenses, salesperson, sales, totals, userProfile]);
 
   const filteredProducts = useMemo(() => {
     const value = search.trim().toLowerCase();
@@ -38,7 +98,7 @@ export default function SalesScreen() {
       (product) =>
         product.name.toLowerCase().includes(value) ||
         product.sku.toLowerCase().includes(value) ||
-        product.barcode.toLowerCase().includes(value)
+        normalizeBarcode(product.barcode).includes(normalizeBarcode(value))
     );
   }, [products, search]);
 
@@ -53,24 +113,28 @@ export default function SalesScreen() {
     [cart, products]
   );
   const cartTotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const discountValue = Math.max(Number(discountAmount) || 0, 0);
+  const safeDiscount = Math.min(discountValue, cartTotal);
+  const payableTotal = Math.max(cartTotal - safeDiscount, 0);
   const cartProfit = cartItems.reduce(
     (sum, item) => sum + (item.product.price - item.product.costPrice) * item.quantity,
     0
   );
+  const payableProfit = cartProfit - safeDiscount;
 
   function addToCart(product: Product) {
     if (!userProfile) {
-      Alert.alert('Sign in required', 'Please sign in before selling products.');
+      Alert.alert(t('signInRequired'), t('pleaseSignInBeforeSelling'));
       return;
     }
 
     if (!canSell) {
-      Alert.alert('Permission required', 'Only sales users and admins can sell products.');
+      Alert.alert(t('permissionRequired'), t('onlySalesRolesCanSell'));
       return;
     }
 
     if (product.stock <= 0) {
-      Alert.alert('Out of stock', 'This product cannot be sold right now.');
+      Alert.alert(t('outOfStock'), t('outOfStockMessage'));
       return;
     }
 
@@ -78,7 +142,7 @@ export default function SalesScreen() {
       const currentQuantity = current[product.id] ?? 0;
 
       if (currentQuantity >= product.stock) {
-        Alert.alert('Stock limit reached', 'Cart quantity cannot exceed available stock.');
+        Alert.alert(t('stockLimitReached'), t('cartQuantityCannotExceedStock'));
         return current;
       }
 
@@ -98,7 +162,7 @@ export default function SalesScreen() {
       }
 
       if (nextQuantity > product.stock) {
-        Alert.alert('Stock limit reached', 'Cart quantity cannot exceed available stock.');
+        Alert.alert(t('stockLimitReached'), t('cartQuantityCannotExceedStock'));
         return current;
       }
 
@@ -108,92 +172,141 @@ export default function SalesScreen() {
 
   async function checkout() {
     if (!userProfile) {
-      Alert.alert('Sign in required', 'Please sign in before checkout.');
+      Alert.alert(t('signInRequired'), t('pleaseSignInBeforeCheckout'));
+      return;
+    }
+
+    if (!canSell) {
+      Alert.alert(t('permissionRequired'), t('onlySalesRolesCanSell'));
       return;
     }
 
     if (!cartItems.length) {
-      Alert.alert('Cart is empty', 'Add at least one product to checkout.');
+      Alert.alert(t('cartIsEmpty'), t('addAtLeastOneProductToCheckout'));
       return;
     }
 
-    try {
-      await checkoutProducts(cartItems, userProfile);
-      setCart({});
-      setLastScannedProduct(null);
-      Alert.alert('Checkout complete', 'Sale, stock, and total value were updated.');
-    } catch (error) {
-      Alert.alert('Checkout failed', getFirebaseErrorMessage(error));
+    if (discountValue > cartTotal) {
+      Alert.alert(t('invalidDiscount'), t('discountCannotExceedTotal'));
+      return;
     }
+
+    setCheckingOut(true);
+
+    try {
+      const receipt = createReceiptText({
+        cashier: userProfile.fullName,
+        discount: safeDiscount,
+        formatMoney,
+        items: cartItems,
+        subtotal: cartTotal,
+        total: payableTotal,
+      });
+      await checkoutProducts(cartItems, userProfile, safeDiscount);
+      await Clipboard.setStringAsync(receipt);
+      setCart({});
+      setDiscountAmount('');
+      setLastScannedProduct(null);
+      Alert.alert(t('checkoutComplete'), `${t('saleStockTotalUpdated')}\n\n${t('receiptCopied')}`);
+    } catch (error) {
+      Alert.alert(t('checkoutFailed'), getFirebaseErrorMessage(error));
+    } finally {
+      setCheckingOut(false);
+    }
+  }
+
+  function openScanner() {
+    if (!userProfile) {
+      Alert.alert(t('signInRequired'), t('pleaseSignInBeforeSelling'));
+      return;
+    }
+
+    if (!canSell) {
+      Alert.alert(t('permissionRequired'), t('onlySalesRolesCanSell'));
+      return;
+    }
+
+    if (!products.length) {
+      Alert.alert(t('noProducts'), t('createProductsWithBarcodesBeforeScanning'));
+      return;
+    }
+
+    setScannerOpen(true);
   }
 
   function handleBarcode(data: string) {
     const code = data.trim();
-    const product = products.find((item) => item.barcode.trim() === code);
+    const product = products.find((item) => barcodeMatches(item.barcode, code));
 
     setScannerOpen(false);
     setSearch(code);
     if (!product) {
-      Alert.alert('Product not found', 'No product matches this barcode.');
+      Alert.alert(t('productNotFound'), t('noProductMatchesBarcode'));
       return;
     }
 
     addToCart(product);
   }
 
+  if (scannerOpen) {
+    return (
+      <BarcodeScannerView
+        title={t('scanProductToSell')}
+        onCancel={() => setScannerOpen(false)}
+        onScanned={handleBarcode}
+      />
+    );
+  }
+
   return (
     <MobileShell>
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setScannerOpen(false)}
-        presentationStyle="fullScreen"
-        visible={scannerOpen}>
-        <BarcodeScannerView
-          title="Scan product to sell"
-          onCancel={() => setScannerOpen(false)}
-          onScanned={handleBarcode}
-        />
-      </Modal>
-      <AppHeader title="Sales" left="back" right="none" onLeftPress={() => router.back()} />
+      <AppHeader title={t('sales')} left="back" right="none" onLeftPress={() => router.back()} />
       <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.summary}>
           <View>
-            <ThemedText style={styles.summaryLabel}>Sales revenue</ThemedText>
-            <ThemedText style={styles.summaryValue}>{formatProductPrice(totals.totalSales)}</ThemedText>
+            <ThemedText style={styles.summaryLabel}>{t('salesRevenue')}</ThemedText>
+            <ThemedText style={styles.summaryValue}>{formatMoney(visibleSalesTotals.totalSales)}</ThemedText>
           </View>
-          <View style={styles.summarySide}>
-            <ThemedText style={styles.summaryLabel}>Profit</ThemedText>
-            <ThemedText style={styles.profit}>{formatProductPrice(totals.totalProfit)}</ThemedText>
-          </View>
+          {!salesperson ? (
+            <View style={styles.summarySide}>
+              <ThemedText style={styles.summaryLabel}>{t('profit')}</ThemedText>
+              <ThemedText style={styles.profit}>{formatMoney(visibleSalesTotals.totalProfit)}</ThemedText>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.searchRow}>
           <View style={styles.searchInput}>
             <AuthInput
-              label="Browse by name, SKU, or barcode"
+              label={t('browseProducts')}
               onChangeText={setSearch}
-              placeholder="Search product"
+              placeholder={t('searchProduct')}
               value={search}
             />
           </View>
-          <Pressable accessibilityRole="button" onPress={() => setScannerOpen(true)} style={styles.scanButton}>
+          <Pressable accessibilityRole="button" onPress={openScanner} style={styles.scanButton}>
             <ScanLine color="#ffffff" size={24} strokeWidth={2.4} />
           </Pressable>
         </View>
+        {productsError ? (
+          <ThemedText style={styles.errorText}>{t('productFirebaseError')}: {productsError}</ThemedText>
+        ) : null}
 
         {lastScannedProduct ? (
           <View style={styles.scannedPanel}>
-            <ThemedText style={styles.panelTitle}>Scanned product</ThemedText>
+            <ThemedText style={styles.panelTitle}>{t('scanProductToSell')}</ThemedText>
             <ThemedText style={styles.productName}>{lastScannedProduct.name}</ThemedText>
-            <ThemedText style={styles.productMeta}>Barcode: {lastScannedProduct.barcode}</ThemedText>
-            <ThemedText style={styles.productMeta}>SKU: {lastScannedProduct.sku}</ThemedText>
-            <ThemedText style={styles.productMeta}>Stock: {lastScannedProduct.stock}</ThemedText>
+            <ThemedText style={styles.productMeta}>{t('barcode')}: {lastScannedProduct.barcode}</ThemedText>
+            <ThemedText style={styles.productMeta}>{t('sku')}: {lastScannedProduct.sku}</ThemedText>
+            <ThemedText style={styles.productMeta}>{t('stock')}: {lastScannedProduct.stock}</ThemedText>
             <ThemedText style={styles.price}>
-              Selling price: {formatProductPrice(lastScannedProduct.price)}
+              {t('sales')}: {formatMoney(lastScannedProduct.price)}
             </ThemedText>
-            <ThemedText style={styles.productMeta}>
-              Profit per item: {formatProductPrice(lastScannedProduct.price - lastScannedProduct.costPrice)}
-            </ThemedText>
+            {!salesperson ? (
+              <ThemedText style={styles.productMeta}>
+                {t('profitPerItem')}: {formatMoney(lastScannedProduct.price - lastScannedProduct.costPrice)}
+              </ThemedText>
+            ) : null}
           </View>
         ) : null}
 
@@ -201,9 +314,9 @@ export default function SalesScreen() {
           <View style={styles.checkoutHeader}>
             <View style={styles.checkoutTitleRow}>
               <ShoppingCart color="#0878ff" size={20} strokeWidth={2.4} />
-              <ThemedText style={styles.panelTitle}>Checkout</ThemedText>
+              <ThemedText style={styles.panelTitle}>{t('checkout')}</ThemedText>
             </View>
-            <ThemedText style={styles.productMeta}>{cartItems.length} items</ThemedText>
+            <ThemedText style={styles.productMeta}>{cartItems.length} {t('products')}</ThemedText>
           </View>
           {cartItems.length ? (
             <View style={styles.cartList}>
@@ -212,12 +325,12 @@ export default function SalesScreen() {
                   <View style={styles.productInfo}>
                     <ThemedText style={styles.productName}>{product.name}</ThemedText>
                     <ThemedText style={styles.productMeta}>
-                      {formatProductPrice(product.price)} x {quantity}
+                      {formatMoney(product.price)} x {quantity}
                     </ThemedText>
                   </View>
                   <View style={styles.quantityControls}>
                     <Pressable
-                      accessibilityLabel="Decrease quantity"
+                      accessibilityLabel={t('cartQuantityCannotExceedStock')}
                       accessibilityRole="button"
                       onPress={() => updateCartQuantity(product, -1)}
                       style={styles.quantityButton}>
@@ -225,7 +338,7 @@ export default function SalesScreen() {
                     </Pressable>
                     <ThemedText style={styles.quantityText}>{quantity}</ThemedText>
                     <Pressable
-                      accessibilityLabel="Increase quantity"
+                      accessibilityLabel={t('stock')}
                       accessibilityRole="button"
                       onPress={() => updateCartQuantity(product, 1)}
                       style={styles.quantityButton}>
@@ -236,13 +349,24 @@ export default function SalesScreen() {
               ))}
             </View>
           ) : (
-            <ThemedText style={styles.productMeta}>Scan or browse products to add them here.</ThemedText>
+            <ThemedText style={styles.productMeta}>{t('scanOrBrowseProductsToAdd')}</ThemedText>
           )}
+          <AuthInput
+            label={t('discountAmount')}
+            keyboardType="numeric"
+            onChangeText={setDiscountAmount}
+            placeholder="0.00"
+            value={discountAmount}
+          />
           <View style={styles.checkoutTotals}>
-            <ThemedText style={styles.totalText}>Total: {formatProductPrice(cartTotal)}</ThemedText>
-            <ThemedText style={styles.profitText}>Profit: {formatProductPrice(cartProfit)}</ThemedText>
+            <ThemedText style={styles.productMeta}>{t('subtotal')}: {formatMoney(cartTotal)}</ThemedText>
+            <ThemedText style={styles.productMeta}>{t('discount')}: {formatMoney(safeDiscount)}</ThemedText>
+            <ThemedText style={styles.totalText}>{t('total')}: {formatMoney(payableTotal)}</ThemedText>
+            {!salesperson ? (
+              <ThemedText style={styles.profitText}>{t('profit')}: {formatMoney(payableProfit)}</ThemedText>
+            ) : null}
           </View>
-          <AuthButton disabled={!cartItems.length || !canSell} title="Checkout" onPress={checkout} />
+          <AuthButton loading={checkingOut} title={t('checkout')} onPress={checkout} />
         </View>
 
         <View style={styles.list}>
@@ -250,14 +374,14 @@ export default function SalesScreen() {
             <View key={product.id} style={styles.productRow}>
               <View style={styles.productInfo}>
                 <ThemedText style={styles.productName}>{product.name}</ThemedText>
-                <ThemedText style={styles.productMeta}>Barcode: {product.barcode}</ThemedText>
-                <ThemedText style={styles.productMeta}>Stock: {product.stock}</ThemedText>
+                <ThemedText style={styles.productMeta}>{t('barcode')}: {product.barcode}</ThemedText>
+                <ThemedText style={styles.productMeta}>{t('stock')}: {product.stock}</ThemedText>
               </View>
               <View style={styles.productAction}>
-                <ThemedText style={styles.price}>{formatProductPrice(product.price)}</ThemedText>
+                <ThemedText style={styles.price}>{formatMoney(product.price)}</ThemedText>
                 <AuthButton
-                  disabled={!canSell || product.stock <= 0}
-                  title="Add"
+                  disabled={product.stock <= 0}
+                  title={t('sell')}
                   onPress={() => addToCart(product)}
                 />
               </View>
@@ -265,7 +389,7 @@ export default function SalesScreen() {
           ))}
         </View>
       </ScrollView>
-      <BottomNav active="products" />
+      <BottomNav active="sales" />
     </MobileShell>
   );
 }
@@ -437,6 +561,12 @@ const styles = StyleSheet.create({
   productAction: {
     width: 92,
     gap: 8,
+  },
+  errorText: {
+    color: '#d92d20',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
   },
   price: {
     color: '#101828',

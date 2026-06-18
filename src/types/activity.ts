@@ -28,3 +28,8 @@ export type Sale = {
   createdByName: string;
   createdAt: Timestamp;
 };
+
+export type SaleItem = Omit<Sale, 'id'> & {
+  id: string;
+  saleId: string;
+};

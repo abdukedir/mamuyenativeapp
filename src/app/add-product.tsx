@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -13,9 +13,11 @@ import { MobileShell } from '@/components/inventory/mobile-shell';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/hooks/useAuth';
 import { useCategories } from '@/hooks/useCategories';
+import { useMoneyFormatter, useTranslation } from '@/hooks/useAppSettings';
 import { createCategory } from '@/services/categoryService';
 import { createProductWithCategory } from '@/services/productService';
-import { categoryAccentOptions, formatProductPrice } from '@/types/product';
+import { categoryAccentOptions } from '@/types/product';
+import { canAccessAllApp } from '@/types/user';
 import { getFirebaseErrorMessage } from '@/utils/firebaseErrors';
 import {
   categorySchema,
@@ -26,7 +28,9 @@ import {
 
 export default function AddProductScreen() {
   const { userProfile } = useAuth();
-  const { categories, loading: categoriesLoading } = useCategories();
+  const t = useTranslation();
+  const formatMoney = useMoneyFormatter();
+  const { categories, error: categoriesError, loading: categoriesLoading } = useCategories();
   const [scannerOpen, setScannerOpen] = useState(false);
   const [categoryName, setCategoryName] = useState('');
   const [categoryAccent, setCategoryAccent] = useState(categoryAccentOptions[0]);
@@ -36,7 +40,6 @@ export default function AddProductScreen() {
     handleSubmit,
     reset,
     setValue,
-    watch,
     formState: { errors, isSubmitting },
   } = useForm<ProductFormInput, unknown, ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -48,15 +51,17 @@ export default function AddProductScreen() {
       costPrice: 0,
       price: 0,
       stock: 0,
+      minimumStockLevel: 5,
+      criticalStockLevel: 2,
       description: '',
     },
   });
+  const selectedCategoryId = useWatch({ control, name: 'categoryId' });
+  const costPrice = Number(useWatch({ control, name: 'costPrice' }) ?? 0);
+  const sellingPrice = Number(useWatch({ control, name: 'price' }) ?? 0);
 
-  const canCreate = userProfile?.role === 'stock_manager' || userProfile?.role === 'admin';
-  const selectedCategoryId = watch('categoryId');
+  const canCreate = canAccessAllApp(userProfile);
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId);
-  const costPrice = Number(watch('costPrice') ?? 0);
-  const sellingPrice = Number(watch('price') ?? 0);
   const profit = useMemo(() => sellingPrice - costPrice, [costPrice, sellingPrice]);
 
   useEffect(() => {
@@ -67,29 +72,31 @@ export default function AddProductScreen() {
 
   async function handleCreateCategory() {
     if (!userProfile) {
-      Alert.alert('Sign in required', 'Please sign in before creating categories.');
+      Alert.alert(t('signInRequired'), 'Please sign in before creating categories.');
       return;
     }
 
     if (!canCreate) {
-      Alert.alert('Permission required', 'Only stock managers and admins can create categories.');
+      Alert.alert(t('permissionRequired'), 'Only active registered users can create categories.');
       return;
     }
 
     const parsed = categorySchema.safeParse({ name: categoryName, accent: categoryAccent });
 
     if (!parsed.success) {
-      Alert.alert('Category required', parsed.error.issues[0]?.message ?? 'Enter a valid category.');
+      Alert.alert(t('category'), parsed.error.issues[0]?.message ?? t('category'));
       return;
     }
 
     setCreatingCategory(true);
 
     try {
-      await createCategory(parsed.data, userProfile);
+      const categoryId = await createCategory(parsed.data, userProfile);
+      setValue('categoryId', categoryId, { shouldDirty: true, shouldValidate: true });
       setCategoryName('');
+      Alert.alert(t('createCategory'), 'The category was saved to Firebase.');
     } catch (error) {
-      Alert.alert('Create category failed', getFirebaseErrorMessage(error));
+      Alert.alert(t('createCategory'), getFirebaseErrorMessage(error));
     } finally {
       setCreatingCategory(false);
     }
@@ -97,27 +104,27 @@ export default function AddProductScreen() {
 
   const onSubmit = handleSubmit(async (values) => {
     if (!userProfile) {
-      Alert.alert('Sign in required', 'Please sign in before creating products.');
+      Alert.alert(t('signInRequired'), 'Please sign in before creating products.');
       return;
     }
 
     if (!canCreate) {
-      Alert.alert('Permission required', 'Only stock managers and admins can create products.');
+      Alert.alert(t('permissionRequired'), 'Only active registered users can create products.');
       return;
     }
 
     if (!selectedCategory) {
-      Alert.alert('Category required', 'Create and choose a category before creating products.');
+      Alert.alert(t('category'), 'Create and choose a category before creating products.');
       return;
     }
 
     try {
       await createProductWithCategory(values, selectedCategory, userProfile);
       reset();
-      Alert.alert('Product created', 'Your product is now live.');
+      Alert.alert(t('createProduct'), `${values.name} is now saved in Firebase.`);
       router.replace('/explore');
     } catch (error) {
-      Alert.alert('Create product failed', getFirebaseErrorMessage(error));
+      Alert.alert(t('createProduct'), getFirebaseErrorMessage(error));
     }
   });
 
@@ -129,7 +136,7 @@ export default function AddProductScreen() {
         presentationStyle="fullScreen"
         visible={scannerOpen}>
         <BarcodeScannerView
-          title="Scan product barcode"
+          title={t('scanProductToSell')}
           onCancel={() => setScannerOpen(false)}
           onScanned={(value) => {
             setValue('barcode', value.trim(), {
@@ -141,7 +148,7 @@ export default function AddProductScreen() {
           }}
         />
       </Modal>
-      <AppHeader title="Add Product" left="back" onLeftPress={() => router.back()} />
+      <AppHeader title={t('addProduct')} left="back" onLeftPress={() => router.back()} />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
@@ -149,17 +156,20 @@ export default function AddProductScreen() {
         bounces={false}>
         {!canCreate ? (
           <View style={styles.notice}>
-            <ThemedText style={styles.noticeTitle}>Product creation is for stock managers and admins.</ThemedText>
+            <ThemedText style={styles.noticeTitle}>{t('productCreationManagersOnly')}</ThemedText>
             <ThemedText style={styles.noticeCopy}>
-              Sales users can browse and sell products, but cannot create inventory records.
+              {t('salesCanBrowseOnly')}
             </ThemedText>
           </View>
         ) : null}
 
         <View style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>1. Create category</ThemedText>
+          <ThemedText style={styles.sectionTitle}>{t('createCategoryStep')}</ThemedText>
+          {categoriesError ? (
+            <ThemedText style={styles.errorText}>{t('categoryFirebaseError')}: {categoriesError}</ThemedText>
+          ) : null}
           <AuthInput
-            label="Category name"
+            label={t('categoryName')}
             onChangeText={setCategoryName}
             placeholder="Example: Electronics"
             value={categoryName}
@@ -180,16 +190,15 @@ export default function AddProductScreen() {
             ))}
           </View>
           <AuthButton
-            disabled={!canCreate}
             loading={creatingCategory}
-            title="Create Category"
+            title={t('createCategory')}
             variant="secondary"
             onPress={handleCreateCategory}
           />
         </View>
 
         <View style={styles.form}>
-          <ThemedText style={styles.sectionTitle}>2. Create product</ThemedText>
+          <ThemedText style={styles.sectionTitle}>{t('createProductStep')}</ThemedText>
           <Controller
             control={control}
             name="name"
@@ -197,10 +206,10 @@ export default function AddProductScreen() {
               <AuthInput
                 autoCapitalize="words"
                 error={errors.name?.message}
-                label="Product name"
+                label={t('productName')}
                 onBlur={onBlur}
                 onChangeText={onChange}
-                placeholder="Product name"
+                placeholder={t('productName')}
                 value={value}
               />
             )}
@@ -212,7 +221,7 @@ export default function AddProductScreen() {
               <AuthInput
                 autoCapitalize="characters"
                 error={errors.sku?.message}
-                label="SKU"
+                label={t('sku')}
                 onBlur={onBlur}
                 onChangeText={onChange}
                 placeholder="TV-43-SAM"
@@ -225,7 +234,7 @@ export default function AddProductScreen() {
             name="categoryId"
             render={({ field: { onChange, value } }) => (
               <View style={styles.categoryWrap}>
-                <ThemedText style={styles.label}>Category</ThemedText>
+                <ThemedText style={styles.label}>{t('category')}</ThemedText>
                 <View style={styles.categories}>
                   {categories.map((category) => (
                     <CategoryOption
@@ -237,7 +246,7 @@ export default function AddProductScreen() {
                   ))}
                 </View>
                 {!categories.length && !categoriesLoading ? (
-                  <ThemedText style={styles.errorText}>Create a category first.</ThemedText>
+                  <ThemedText style={styles.errorText}>{t('createCategoryFirst')}</ThemedText>
                 ) : null}
                 {errors.categoryId?.message ? (
                   <ThemedText style={styles.errorText}>{errors.categoryId.message}</ThemedText>
@@ -253,14 +262,14 @@ export default function AddProductScreen() {
                 <View style={styles.scanInput}>
                   <AuthInput
                     error={errors.barcode?.message}
-                    label="Barcode"
+                    label={t('barcode')}
                     onBlur={onBlur}
                     onChangeText={onChange}
-                    placeholder="Scan or enter barcode"
+                    placeholder={t('scanOrEnterBarcode')}
                     value={value}
                   />
                 </View>
-                <AuthButton title="Scan" variant="secondary" onPress={() => setScannerOpen(true)} />
+                <AuthButton title={t('scan')} variant="secondary" onPress={() => setScannerOpen(true)} />
               </View>
             )}
           />
@@ -273,7 +282,7 @@ export default function AddProductScreen() {
                   <AuthInput
                     error={errors.costPrice?.message}
                     keyboardType="decimal-pad"
-                    label="Cost price"
+                    label={t('costPrice')}
                     onBlur={onBlur}
                     onChangeText={onChange}
                     placeholder="120.00"
@@ -290,7 +299,7 @@ export default function AddProductScreen() {
                   <AuthInput
                     error={errors.price?.message}
                     keyboardType="decimal-pad"
-                    label="Selling price"
+                    label={t('sellingPrice')}
                     onBlur={onBlur}
                     onChangeText={onChange}
                     placeholder="299.00"
@@ -301,7 +310,7 @@ export default function AddProductScreen() {
             </View>
           </View>
           <View style={styles.profitBox}>
-            <ThemedText style={styles.profitText}>Estimated profit: {formatProductPrice(profit)}</ThemedText>
+            <ThemedText style={styles.profitText}>{t('estimatedProfit')}: {formatMoney(profit)}</ThemedText>
           </View>
           <View style={styles.row}>
             <View style={styles.fullWidth}>
@@ -312,10 +321,46 @@ export default function AddProductScreen() {
                   <AuthInput
                     error={errors.stock?.message}
                     keyboardType="number-pad"
-                    label="Stock"
+                    label={t('stock')}
                     onBlur={onBlur}
                     onChangeText={onChange}
                     placeholder="12"
+                    value={String(value)}
+                  />
+                )}
+              />
+            </View>
+          </View>
+          <View style={styles.row}>
+            <View style={styles.half}>
+              <Controller
+                control={control}
+                name="minimumStockLevel"
+                render={({ field: { onBlur, onChange, value } }) => (
+                  <AuthInput
+                    error={errors.minimumStockLevel?.message}
+                    keyboardType="number-pad"
+                    label={t('minimumStockLevel')}
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    placeholder="5"
+                    value={String(value)}
+                  />
+                )}
+              />
+            </View>
+            <View style={styles.half}>
+              <Controller
+                control={control}
+                name="criticalStockLevel"
+                render={({ field: { onBlur, onChange, value } }) => (
+                  <AuthInput
+                    error={errors.criticalStockLevel?.message}
+                    keyboardType="number-pad"
+                    label={t('criticalStockAlert')}
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    placeholder="2"
                     value={String(value)}
                   />
                 )}
@@ -328,21 +373,20 @@ export default function AddProductScreen() {
             render={({ field: { onBlur, onChange, value } }) => (
               <AuthInput
                 error={errors.description?.message}
-                label="Description"
+                label={t('description')}
                 multiline
                 numberOfLines={4}
                 onBlur={onBlur}
                 onChangeText={onChange}
-                placeholder="Key product and stock details"
+                placeholder={t('optionalDetails')}
                 style={styles.textArea}
                 value={value}
               />
             )}
           />
           <AuthButton
-            disabled={!canCreate}
             loading={isSubmitting}
-            title="Create Product"
+            title={t('createProduct')}
             onPress={onSubmit}
           />
         </View>

@@ -5,6 +5,8 @@ import { Alert, StyleSheet, View } from 'react-native';
 
 import { AuthButton } from '@/components/auth/AuthButton';
 import { AuthInput } from '@/components/auth/AuthInput';
+import { LanguageSelector } from '@/components/auth/LanguageSelector';
+import { useTranslation } from '@/hooks/useAppSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { getFirebaseErrorMessage } from '@/utils/firebaseErrors';
 import {
@@ -14,6 +16,7 @@ import {
 import { AuthScreenFrame } from './AuthScreenFrame';
 
 export function ForgotPasswordScreen() {
+  const t = useTranslation();
   const { resetPassword } = useAuth();
   const {
     control,
@@ -21,42 +24,42 @@ export function ForgotPasswordScreen() {
     formState: { errors, isSubmitting },
   } = useForm<ForgotPasswordFormValues>({
     resolver: zodResolver(forgotPasswordSchema),
-    defaultValues: { email: '' },
+    defaultValues: { username: '' },
   });
 
   const onSubmit = handleSubmit(async (values) => {
     try {
       await resetPassword(values);
-      Alert.alert('Check your email', 'Password reset instructions have been sent.');
+      Alert.alert(t('checkYourEmail'), t('passwordResetInstructionsSent'));
     } catch (error) {
-      Alert.alert('Reset failed', getFirebaseErrorMessage(error));
+      Alert.alert(t('resetFailed'), getFirebaseErrorMessage(error));
     }
   });
 
   return (
-    <AuthScreenFrame title="Reset password" subtitle="Enter your email and we will send reset instructions.">
+    <AuthScreenFrame title={t('resetPassword')} subtitle={t('resetPasswordSubtitle')}>
       <View style={styles.form}>
+        <LanguageSelector />
         <Controller
           control={control}
-          name="email"
+          name="username"
           render={({ field: { onBlur, onChange, value } }) => (
             <AuthInput
-              autoComplete="email"
-              error={errors.email?.message}
-              keyboardType="email-address"
-              label="Email"
+              autoComplete="username"
+              error={errors.username?.message}
+              label={t('username')}
               onBlur={onBlur}
               onChangeText={onChange}
-              placeholder="you@example.com"
-              textContentType="emailAddress"
+              placeholder={t('enterUsername')}
+              textContentType="username"
               value={value}
             />
           )}
         />
-        <AuthButton title="Send reset email" loading={isSubmitting} onPress={onSubmit} />
+        <AuthButton title={t('sendResetEmail')} loading={isSubmitting} onPress={onSubmit} />
       </View>
       <Link href={'/login' as never} style={styles.link}>
-        Back to sign in
+        {t('backToSignIn')}
       </Link>
     </AuthScreenFrame>
   );

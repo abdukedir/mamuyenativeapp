@@ -9,12 +9,14 @@ import {
 } from 'firebase/firestore';
 
 import { firestore } from '@/config/firebase';
-import type { Expense, Sale } from '@/types/activity';
+import type { Expense, Sale, SaleItem } from '@/types/activity';
 import type { Product } from '@/types/product';
 import type { UserProfile } from '@/types/user';
+import { safeLogActivity } from './businessService';
 
 const expensesRef = collection(firestore, 'expenses');
 const salesRef = collection(firestore, 'sales');
+const saleItemsRef = collection(firestore, 'saleItems');
 
 function cleanText(value: string) {
   return value.trim().replace(/\s+/g, ' ');
@@ -53,6 +55,24 @@ export function subscribeToSales(onSales: (sales: Sale[]) => void, onError: (err
   );
 }
 
+export function subscribeToSaleItems(
+  onSaleItems: (saleItems: SaleItem[]) => void,
+  onError: (error: Error) => void
+) {
+  return onSnapshot(
+    query(saleItemsRef, orderBy('createdAt', 'desc')),
+    (snapshot) => {
+      onSaleItems(
+        snapshot.docs.map((document) => ({
+          ...(document.data() as Omit<SaleItem, 'id'>),
+          id: document.id,
+        }))
+      );
+    },
+    onError
+  );
+}
+
 export async function createExpense(input: { title: string; amount: number; note?: string }, user: UserProfile) {
   const expense: Omit<Expense, 'id'> = {
     title: cleanText(input.title),
@@ -65,6 +85,7 @@ export async function createExpense(input: { title: string; amount: number; note
   };
 
   await addDoc(expensesRef, expense);
+  await safeLogActivity(user, 'expense_entry');
 }
 
 export async function createSale(product: Product, quantity: number, user: UserProfile) {
@@ -88,4 +109,5 @@ export async function createSale(product: Product, quantity: number, user: UserP
   };
 
   await addDoc(salesRef, sale);
+  await safeLogActivity(user, 'sales_creation');
 }

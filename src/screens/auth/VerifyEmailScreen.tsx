@@ -1,15 +1,18 @@
 import { MailCheck } from 'lucide-react-native';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useRef } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
-import { AppState } from 'react-native';
+import { Alert, AppState, StyleSheet, View } from 'react-native';
 
 import { AuthButton } from '@/components/auth/AuthButton';
+import { LanguageSelector } from '@/components/auth/LanguageSelector';
 import { ThemedText } from '@/components/themed-text';
+import { useTranslation } from '@/hooks/useAppSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { getFirebaseErrorMessage } from '@/utils/firebaseErrors';
 import { AuthScreenFrame } from './AuthScreenFrame';
 
 export function VerifyEmailScreen() {
+  const t = useTranslation();
   const {
     loading,
     logout,
@@ -58,27 +61,33 @@ export function VerifyEmailScreen() {
   async function handleResend() {
     try {
       await resendEmailVerification();
-      Alert.alert('Email sent', 'A new verification link has been sent.');
+      Alert.alert(t('emailSent'), t('newVerificationLinkSent'));
     } catch (error) {
-      Alert.alert('Could not send email', getFirebaseErrorMessage(error));
+      Alert.alert(t('couldNotSendEmail'), getFirebaseErrorMessage(error));
     }
   }
 
+  async function handleLogout() {
+    await logout();
+    router.replace('/login' as never);
+  }
+
   return (
-    <AuthScreenFrame title="Verify your email" subtitle="Open the verification link before accessing your workspace.">
+    <AuthScreenFrame title={t('verifyYourEmail')} subtitle={t('openVerificationLink')}>
+      <LanguageSelector />
       <View style={styles.panel}>
         <View style={styles.icon}>
           <MailCheck color="#0878ff" size={34} strokeWidth={2.2} />
         </View>
         <ThemedText style={styles.email}>{user?.email}</ThemedText>
         <ThemedText style={styles.copy}>
-          We use verified email addresses to protect orders, inventory, and account recovery.
+          {t('verifiedEmailProtection')}
         </ThemedText>
       </View>
       <View style={styles.actions}>
-        <AuthButton title="I verified my email" loading={loading} onPress={checkVerification} />
-        <AuthButton title="Resend email" variant="secondary" onPress={handleResend} />
-        <AuthButton title="Sign out" variant="secondary" onPress={logout} />
+        <AuthButton title={t('iVerifiedMyEmail')} loading={loading} onPress={checkVerification} />
+        <AuthButton title={t('resendEmail')} variant="secondary" onPress={handleResend} />
+        <AuthButton title={t('signOut')} variant="secondary" onPress={handleLogout} />
       </View>
     </AuthScreenFrame>
   );

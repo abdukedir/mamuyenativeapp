@@ -13,11 +13,23 @@ const authErrorMessages: Record<string, string> = {
   'auth/weak-password': 'Choose a stronger password.',
   'auth/wrong-password': 'The email or password is incorrect.',
   'permission-denied': 'You do not have permission to perform this action.',
+  'functions/already-exists': 'This user already exists.',
+  'functions/invalid-argument': 'Check the form values and try again.',
+  'functions/failed-precondition': 'Firebase could not create this user. Check the details and function logs.',
+  'functions/internal': 'Firebase Functions returned an internal error. Deploy the latest functions and check Firebase function logs.',
+  'functions/not-found': 'The Firebase user-management function is not deployed. Run: firebase deploy --only functions',
+  'functions/permission-denied': 'Only active registered users can perform this action. Check your users/{uid} isActive field.',
+  'functions/unauthenticated': 'Sign in again before managing users.',
+  'functions/unavailable': 'Firebase Functions is unavailable. Check your connection and try again.',
   unavailable: 'The service is unavailable. Try again shortly.',
 };
 
 export function getFirebaseErrorMessage(error: unknown) {
   if (error instanceof FirebaseError) {
+    if (error.code === 'functions/failed-precondition' && error.message) {
+      return error.message;
+    }
+
     return authErrorMessages[error.code] ?? error.message;
   }
 

@@ -14,23 +14,54 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid));
     }
 
-    function isAdmin() {
+    function isBootstrapSuperAdmin() {
       return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && userDoc(request.auth.uid).data.role == 'admin'
-        && userDoc(request.auth.uid).data.isActive == true;
+        && (
+          !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          || request.auth.token.role in ['admin', 'member']
+          || request.auth.token.superadmin == true
+        );
+    }
+
+    function isActiveUser() {
+      return signedIn()
+        && (
+          isBootstrapSuperAdmin()
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && userDoc(request.auth.uid).data.isActive != false
+          )
+        );
+    }
+
+    function isAdmin() {
+      return isActiveUser();
+    }
+
+    function hasMemberAccess() {
+      return isActiveUser()
+        && (
+          userDoc(request.auth.uid).data.role == 'member'
+          || userDoc(request.auth.uid).data.role == 'admin'
+          || userDoc(request.auth.uid).data.role == 'membe'
+        );
     }
 
     function allowedSelfCreate(uid) {
       return isOwner(uid)
         && request.resource.data.uid == uid
         && request.resource.data.email == request.auth.token.email
-        && request.resource.data.role in ['sales', 'stock_manager']
-        && request.resource.data.isVerified == false
+        && request.resource.data.username is string
+        && request.resource.data.usernameLower is string
+        && request.resource.data.username == request.resource.data.usernameLower
+        && request.resource.data.role in ['admin', 'member', 'manager', 'salesperson']
+        && request.resource.data.isVerified is bool
         && request.resource.data.isActive == true
         && request.resource.data.keys().hasOnly([
           'uid',
           'email',
+          'username',
+          'usernameLower',
           'fullName',
           'phone',
           'role',
@@ -48,6 +79,8 @@ service cloud.firestore {
         && resource.data.isActive == request.resource.data.isActive
         && request.resource.data.uid == uid
         && request.resource.data.email == resource.data.email
+        && request.resource.data.username == resource.data.username
+        && request.resource.data.usernameLower == resource.data.usernameLower
         && (
           request.resource.data.isVerified == resource.data.isVerified
           || (request.auth.token.email_verified == true && request.resource.data.isVerified == true)
@@ -57,29 +90,41 @@ service cloud.firestore {
           'phone',
           'profileImage',
           'isVerified',
+          'pushTokens',
+          'notificationSettings',
           'updatedAt'
         ]);
     }
 
     match /users/{uid} {
-      allow read: if isOwner(uid) || isAdmin();
-      allow create: if allowedSelfCreate(uid) || isAdmin();
-      allow update: if allowedSelfUpdate(uid) || isAdmin();
-      allow delete: if isAdmin();
+      allow read: if isOwner(uid) || hasMemberAccess();
+      allow create: if allowedSelfCreate(uid) || hasMemberAccess();
+      allow update: if allowedSelfUpdate(uid) || hasMemberAccess();
+      allow delete: if hasMemberAccess();
     }
 
-    function isActiveUser() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && userDoc(request.auth.uid).data.isActive == true;
+    match /usernames/{username} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.username == username
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'email',
+          'username',
+          'createdAt'
+        ]);
+      allow update: if false;
+      allow delete: if hasMemberAccess();
     }
 
     function hasRole(role) {
-      return isActiveUser() && userDoc(request.auth.uid).data.role == role;
+      return isActiveUser();
     }
 
     function canManageProducts() {
-      return hasRole('stock_manager') || isAdmin();
+      return isActiveUser();
     }
 
     function allowedCategoryCreate() {
@@ -98,8 +143,8 @@ service cloud.firestore {
 
     match /categories/{categoryId} {
       allow read: if isActiveUser();
-      allow create: if allowedCategoryCreate() || isAdmin();
-      allow update, delete: if isAdmin();
+      allow create: if allowedCategoryCreate();
+      allow update, delete: if isActiveUser();
     }
 
     function allowedProductCreate() {
@@ -116,6 +161,10 @@ service cloud.firestore {
         && request.resource.data.price > 0
         && request.resource.data.stock is int
         && request.resource.data.stock >= 0
+        && request.resource.data.minimumStockLevel is int
+        && request.resource.data.minimumStockLevel >= 0
+        && request.resource.data.criticalStockLevel is int
+        && request.resource.data.criticalStockLevel >= 0
         && request.resource.data.isActive == true
         && request.resource.data.status == 'active'
         && request.resource.data.keys().hasOnly([
@@ -128,6 +177,8 @@ service cloud.firestore {
           'costPrice',
           'price',
           'stock',
+          'minimumStockLevel',
+          'criticalStockLevel',
           'description',
           'ownerId',
           'ownerName',
@@ -152,6 +203,10 @@ service cloud.firestore {
         && request.resource.data.price > 0
         && request.resource.data.stock is int
         && request.resource.data.stock >= 0
+        && request.resource.data.minimumStockLevel is int
+        && request.resource.data.minimumStockLevel >= 0
+        && request.resource.data.criticalStockLevel is int
+        && request.resource.data.criticalStockLevel >= 0
         && request.resource.data.diff(resource.data).changedKeys().hasOnly([
           'name',
           'sku',
@@ -162,6 +217,8 @@ service cloud.firestore {
           'costPrice',
           'price',
           'stock',
+          'minimumStockLevel',
+          'criticalStockLevel',
           'description',
           'isActive',
           'status',
@@ -170,7 +227,7 @@ service cloud.firestore {
     }
 
     function allowedSalesStockOut() {
-      return hasRole('sales')
+      return canSellProducts()
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['stock', 'updatedAt'])
         && request.resource.data.stock is int
         && request.resource.data.stock < resource.data.stock
@@ -179,13 +236,13 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if isActiveUser();
-      allow create: if allowedProductCreate() || isAdmin();
-      allow update: if allowedProductOwnerUpdate() || allowedSalesStockOut() || isAdmin();
-      allow delete: if isAdmin();
+      allow create: if allowedProductCreate();
+      allow update: if allowedProductOwnerUpdate() || allowedSalesStockOut();
+      allow delete: if isActiveUser();
     }
 
     function canRegisterExpense() {
-      return isActiveUser() && (hasRole('stock_manager') || isAdmin());
+      return isActiveUser();
     }
 
     function allowedExpenseCreate() {
@@ -208,12 +265,12 @@ service cloud.firestore {
 
     match /expenses/{expenseId} {
       allow read: if isActiveUser();
-      allow create: if allowedExpenseCreate() || isAdmin();
-      allow update, delete: if isAdmin();
+      allow create: if allowedExpenseCreate();
+      allow update, delete: if isActiveUser();
     }
 
     function canSellProducts() {
-      return isActiveUser() && (hasRole('sales') || isAdmin());
+      return isActiveUser();
     }
 
     function allowedSaleCreate() {
@@ -245,12 +302,182 @@ service cloud.firestore {
 
     match /sales/{saleId} {
       allow read: if isActiveUser();
-      allow create: if allowedSaleCreate() || isAdmin();
-      allow update, delete: if isAdmin();
+      allow create: if allowedSaleCreate();
+      allow update, delete: if isActiveUser();
+    }
+
+    function canManagePurchases() {
+      return isActiveUser();
+    }
+
+    function canManageCustomers() {
+      return isActiveUser();
+    }
+
+    function canManageSuppliers() {
+      return isActiveUser();
+    }
+
+    function canManageCredits() {
+      return isActiveUser();
+    }
+
+    match /customers/{customerId} {
+      allow read: if isActiveUser();
+      allow create, update: if canManageCustomers()
+        && request.resource.data.name is string
+        && request.resource.data.phone is string
+        && request.resource.data.totalPurchases is number
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'phone',
+          'email',
+          'totalPurchases',
+          'createdAt',
+          'updatedAt'
+        ]);
+      allow delete: if isActiveUser();
+    }
+
+    match /suppliers/{supplierId} {
+      allow read: if isActiveUser();
+      allow create, update: if canManageSuppliers()
+        && request.resource.data.name is string
+        && request.resource.data.phone is string
+        && request.resource.data.outstandingBalance is number
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'phone',
+          'email',
+          'address',
+          'productsSupplied',
+          'outstandingBalance',
+          'createdBy',
+          'createdAt',
+          'updatedAt'
+        ]);
+      allow delete: if isActiveUser();
+    }
+
+    match /credits/{creditId} {
+      allow read: if isActiveUser();
+      allow create, update: if canManageCredits()
+        && request.resource.data.customerName is string
+        && request.resource.data.phone is string
+        && request.resource.data.amount is number
+        && request.resource.data.paidAmount is number
+        && request.resource.data.remainingBalance is number
+        && request.resource.data.status in ['paid', 'partially_paid', 'unpaid']
+        && request.resource.data.keys().hasOnly([
+          'customerName',
+          'phone',
+          'productPurchased',
+          'quantity',
+          'amount',
+          'paidAmount',
+          'remainingBalance',
+          'dueDate',
+          'status',
+          'createdBy',
+          'createdAt',
+          'updatedAt'
+        ]);
+      allow delete: if isActiveUser();
+    }
+
+    match /creditPayments/{paymentId} {
+      allow read: if isActiveUser();
+      allow create, update: if canManageCredits();
+      allow delete: if isActiveUser();
+    }
+
+    match /purchases/{purchaseId} {
+      allow read: if isActiveUser();
+      allow create, update: if canManagePurchases()
+        && request.resource.data.supplierName is string
+        && request.resource.data.totalAmount is number
+        && request.resource.data.paidAmount is number
+        && request.resource.data.outstandingBalance is number
+        && request.resource.data.keys().hasOnly([
+          'supplierId',
+          'supplierName',
+          'totalAmount',
+          'paidAmount',
+          'outstandingBalance',
+          'createdBy',
+          'createdAt'
+        ]);
+      allow delete: if isActiveUser();
+    }
+
+    match /purchaseItems/{purchaseItemId} {
+      allow read: if isActiveUser();
+      allow create, update: if canManagePurchases();
+      allow delete: if isAdmin();
+    }
+
+    match /saleItems/{saleItemId} {
+      allow read: if isActiveUser();
+      allow create: if canSellProducts()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.saleId is string
+        && request.resource.data.productId is string
+        && request.resource.data.quantity is int
+        && request.resource.data.quantity > 0
+        && request.resource.data.unitPrice is number
+        && request.resource.data.unitCost is number
+        && request.resource.data.totalRevenue is number
+        && request.resource.data.totalCost is number
+        && request.resource.data.profit is number
+        && request.resource.data.keys().hasOnly([
+          'saleId',
+          'productId',
+          'productName',
+          'barcode',
+          'quantity',
+          'unitPrice',
+          'unitCost',
+          'totalRevenue',
+          'totalCost',
+          'profit',
+          'createdBy',
+          'createdByName',
+          'createdAt'
+        ]);
+      allow update: if isActiveUser();
+      allow delete: if isActiveUser();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isActiveUser();
+      allow update: if isActiveUser()
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['read']);
+      allow create, delete: if isActiveUser();
+    }
+
+    match /activityLogs/{activityLogId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.role == userDoc(request.auth.uid).data.role
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'userName',
+          'role',
+          'action',
+          'deviceInfo',
+          'createdAt'
+        ]);
+      allow update, delete: if isActiveUser();
+    }
+
+    match /settings/{settingId} {
+      allow read: if isActiveUser();
+      allow write: if isActiveUser();
     }
 
     match /{document=**} {
-      allow read, write: if isAdmin();
+      allow read, write: if isActiveUser();
     }
   }
 }

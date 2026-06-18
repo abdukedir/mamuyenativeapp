@@ -1,28 +1,39 @@
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { Home, MoreHorizontal, Package, Plus, ReceiptText } from 'lucide-react-native';
+import { BarChart3, Home, MoreHorizontal, Package, Plus, ReceiptText, ShoppingCart } from 'lucide-react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/hooks/useAuth';
+import { useTranslation } from '@/hooks/useAppSettings';
 import { useTheme } from '@/hooks/use-theme';
+import { canAccessAllApp, isSalesperson } from '@/types/user';
 
-type ActiveTab = 'home' | 'products' | 'expenses' | 'more';
+type ActiveTab = 'home' | 'products' | 'sales' | 'expenses' | 'reports' | 'more';
 
 const tabs = [
-  { id: 'home', label: 'Home', Icon: Home, href: '/' },
-  { id: 'products', label: 'Products', Icon: Package, href: '/explore' },
-  { id: 'expenses', label: 'Expense', Icon: ReceiptText, href: '/expense' },
-  { id: 'more', label: 'More', Icon: MoreHorizontal, href: '/more' },
+  { id: 'home', labelKey: 'home', Icon: Home, href: '/' },
+  { id: 'products', labelKey: 'products', Icon: Package, href: '/explore' },
+  { id: 'expenses', labelKey: 'expense', Icon: ReceiptText, href: '/expense' },
+  { id: 'more', labelKey: 'more', Icon: MoreHorizontal, href: '/more' },
+] as const;
+
+const salespersonTabs = [
+  { id: 'sales', labelKey: 'sales', Icon: ShoppingCart, href: '/sales' },
+  { id: 'expenses', labelKey: 'expense', Icon: ReceiptText, href: '/expense' },
+  { id: 'reports', labelKey: 'reports', Icon: BarChart3, href: '/reports' },
+  { id: 'more', labelKey: 'more', Icon: MoreHorizontal, href: '/more' },
 ] as const;
 
 export function BottomNav({ active }: { active: ActiveTab }) {
   const theme = useTheme();
+  const t = useTranslation();
   const { userProfile } = useAuth();
-  const canAddProduct = userProfile?.role === 'admin' || userProfile?.role === 'stock_manager';
+  const canAddProduct = canAccessAllApp(userProfile);
+  const salesperson = isSalesperson(userProfile);
 
   function handleAddProduct() {
     if (!canAddProduct) {
-      Alert.alert('Permission required', 'Only stock managers and admins can add products.');
+      Alert.alert(t('permissionRequired'), t('onlyManagersAdminsAddProducts'));
       return;
     }
 
@@ -31,19 +42,27 @@ export function BottomNav({ active }: { active: ActiveTab }) {
 
   return (
     <View style={styles.wrap}>
-      {tabs.slice(0, 2).map((tab) => (
-        <NavItem key={tab.id} tab={tab} active={active === tab.id} color={theme.text} />
-      ))}
-      <Pressable
-        accessibilityLabel="Add product"
-        accessibilityRole="button"
-        onPress={handleAddProduct}
-        style={[styles.addButton, !canAddProduct && styles.addButtonDisabled]}>
-        <Plus color="#fff" size={34} strokeWidth={2.2} />
-      </Pressable>
-      {tabs.slice(2).map((tab) => (
-        <NavItem key={tab.id} tab={tab} active={active === tab.id} color={theme.text} />
-      ))}
+      {salesperson ? (
+        salespersonTabs.map((tab) => (
+          <NavItem key={tab.id} tab={tab} active={active === tab.id} color={theme.text} label={t(tab.labelKey)} />
+        ))
+      ) : (
+        <>
+          {tabs.slice(0, 2).map((tab) => (
+            <NavItem key={tab.id} tab={tab} active={active === tab.id} color={theme.text} label={t(tab.labelKey)} />
+          ))}
+          <Pressable
+            accessibilityLabel="Add product"
+            accessibilityRole="button"
+            onPress={handleAddProduct}
+            style={[styles.addButton, !canAddProduct && styles.addButtonDisabled]}>
+            <Plus color="#fff" size={34} strokeWidth={2.2} />
+          </Pressable>
+          {tabs.slice(2).map((tab) => (
+            <NavItem key={tab.id} tab={tab} active={active === tab.id} color={theme.text} label={t(tab.labelKey)} />
+          ))}
+        </>
+      )}
     </View>
   );
 }
@@ -52,17 +71,19 @@ function NavItem({
   tab,
   active,
   color,
+  label,
 }: {
-  tab: (typeof tabs)[number];
+  tab: (typeof tabs)[number] | (typeof salespersonTabs)[number];
   active: boolean;
   color: string;
+  label: string;
 }) {
   const Icon = tab.Icon;
 
   return (
     <Pressable onPress={() => router.push(tab.href as never)} style={styles.item}>
       <Icon color={active ? '#0878ff' : color} size={22} strokeWidth={active ? 2.6 : 2.1} />
-      <ThemedText style={[styles.label, active && styles.activeLabel]}>{tab.label}</ThemedText>
+      <ThemedText style={[styles.label, active && styles.activeLabel]}>{label}</ThemedText>
     </Pressable>
   );
 }

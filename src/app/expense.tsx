@@ -12,8 +12,10 @@ import { MobileShell } from '@/components/inventory/mobile-shell';
 import { ThemedText } from '@/components/themed-text';
 import { useActivities } from '@/hooks/useActivities';
 import { useAuth } from '@/hooks/useAuth';
+import { useMoneyFormatter, useTranslation } from '@/hooks/useAppSettings';
+import { useProducts } from '@/hooks/useProducts';
 import { createExpense } from '@/services/activityService';
-import { formatProductPrice } from '@/types/product';
+import { isSalesperson } from '@/types/user';
 import { getFirebaseErrorMessage } from '@/utils/firebaseErrors';
 
 const expenseSchema = z.object({
@@ -27,7 +29,15 @@ type ExpenseFormValues = z.output<typeof expenseSchema>;
 
 export default function ExpenseScreen() {
   const { userProfile } = useAuth();
-  const { expenses, totals } = useActivities();
+  const t = useTranslation();
+  const formatMoney = useMoneyFormatter();
+  const { expenses } = useActivities();
+  const { stats } = useProducts();
+  const salesperson = isSalesperson(userProfile);
+  const visibleExpenses = salesperson && userProfile
+    ? expenses.filter((expense) => expense.createdBy === userProfile.uid)
+    : expenses;
+  const visibleExpenseTotal = visibleExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const {
     control,
     handleSubmit,
@@ -40,43 +50,35 @@ export default function ExpenseScreen() {
 
   const submitExpense = async (values: ExpenseFormValues) => {
     if (!userProfile) {
-      Alert.alert('Sign in required', 'Please sign in before registering expenses.');
+      Alert.alert(t('signInRequired'), t('pleaseSignInBeforeExpenses'));
       return;
     }
 
-    Alert.alert(
-      'Approve expense?',
-      `${values.title}\nAmount: ${formatProductPrice(values.amount)}\n\nThis will decrease total value.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Approve',
-          style: 'default',
-          onPress: async () => {
-            try {
-              await createExpense(values, userProfile);
-              reset();
-              Alert.alert('Expense registered', 'Total value has been updated.');
-            } catch (error) {
-              Alert.alert('Expense failed', getFirebaseErrorMessage(error));
-            }
-          },
-        },
-      ]
-    );
+    try {
+      await createExpense(values, userProfile);
+      reset();
+      Alert.alert(t('expenseRegistered'), `${values.title} (${formatMoney(values.amount)}) ${t('expenseSavedMessage')}`);
+    } catch (error) {
+      Alert.alert(t('expenseFailed'), getFirebaseErrorMessage(error));
+    }
   };
 
   return (
     <MobileShell>
-      <AppHeader title="Expense" left="back" right="none" onLeftPress={() => router.back()} />
+      <AppHeader title={t('expense')} left="back" right="none" onLeftPress={() => router.back()} />
       <ScrollView
         bounces={false}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}>
         <View style={styles.summary}>
-          <ThemedText style={styles.summaryLabel}>Approved expenses</ThemedText>
-          <ThemedText style={styles.summaryValue}>{formatProductPrice(totals.totalExpenses)}</ThemedText>
+          <ThemedText style={styles.summaryLabel}>
+            {salesperson ? t('approvedExpenses') : t('businessTotalAfterExpenses')}
+          </ThemedText>
+          <ThemedText style={styles.summaryValue}>
+            {formatMoney(salesperson ? visibleExpenseTotal : stats.totalValue)}
+          </ThemedText>
+          <ThemedText style={styles.summaryMeta}>{t('approvedExpenses')}: {formatMoney(visibleExpenseTotal)}</ThemedText>
         </View>
 
         <View style={styles.form}>
@@ -86,7 +88,7 @@ export default function ExpenseScreen() {
             render={({ field: { onBlur, onChange, value } }) => (
               <AuthInput
                 error={errors.title?.message}
-                label="Expense title"
+                label={t('expenseTitle')}
                 onBlur={onBlur}
                 onChangeText={onChange}
                 placeholder="Transport, rent, utility"
@@ -101,7 +103,7 @@ export default function ExpenseScreen() {
               <AuthInput
                 error={errors.amount?.message}
                 keyboardType="decimal-pad"
-                label="Amount"
+                label={t('amount')}
                 onBlur={onBlur}
                 onChangeText={onChange}
                 placeholder="0.00"
@@ -115,28 +117,28 @@ export default function ExpenseScreen() {
             render={({ field: { onBlur, onChange, value } }) => (
               <AuthInput
                 error={errors.note?.message}
-                label="Note"
+                label={t('note')}
                 multiline
                 numberOfLines={3}
                 onBlur={onBlur}
                 onChangeText={onChange}
-                placeholder="Optional details"
+                placeholder={t('optionalDetails')}
                 style={styles.textArea}
                 value={value}
               />
             )}
           />
-          <AuthButton title="Register Expense" loading={isSubmitting} onPress={handleSubmit(submitExpense)} />
+          <AuthButton title={t('expense')} loading={isSubmitting} onPress={handleSubmit(submitExpense)} />
         </View>
 
         <View style={styles.list}>
-          {expenses.slice(0, 8).map((expense) => (
+          {visibleExpenses.slice(0, 8).map((expense) => (
             <View key={expense.id} style={styles.row}>
               <View style={styles.rowText}>
                 <ThemedText style={styles.rowTitle}>{expense.title}</ThemedText>
                 <ThemedText style={styles.rowMeta}>{expense.createdByName}</ThemedText>
               </View>
-              <ThemedText style={styles.amount}>{formatProductPrice(expense.amount)}</ThemedText>
+              <ThemedText style={styles.amount}>{formatMoney(expense.amount)}</ThemedText>
             </View>
           ))}
         </View>
@@ -171,6 +173,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '900',
+  },
+  summaryMeta: {
+    color: '#9a3412',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
   },
   form: {
     gap: 14,

@@ -4,23 +4,36 @@ import { ActivityIndicator, StyleSheet, useColorScheme, View } from 'react-nativ
 
 import { AuthProvider } from '@/context/AuthContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useAppSettings } from '@/hooks/useAppSettings';
 
 const roleDashboardPaths = {
   admin: '/dashboard/admin',
-  sales: '/dashboard/sales',
-  stock_manager: '/dashboard/stock-manager',
+  membe: '/dashboard/member',
+  member: '/dashboard/member',
+  manager: '/dashboard/manager',
+  salesperson: '/dashboard/salesperson',
 } as const;
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AuthProvider>
+    <AuthProvider>
+      <AppThemeProvider>
         <AuthGate>
           <Stack screenOptions={{ headerShown: false }} />
         </AuthGate>
-      </AuthProvider>
+      </AppThemeProvider>
+    </AuthProvider>
+  );
+}
+
+function AppThemeProvider({ children }: { children: ReactNode }) {
+  const colorScheme = useColorScheme();
+  const { settings } = useAppSettings();
+  const activeTheme = settings.theme === 'system' ? colorScheme : settings.theme;
+
+  return (
+    <ThemeProvider value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}>
+      {children}
     </ThemeProvider>
   );
 }
@@ -46,12 +59,14 @@ function AuthGate({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!user.emailVerified && !isVerifyRoute) {
+    const isVerified = user.emailVerified || userProfile?.isVerified === true;
+
+    if (!isVerified && !isVerifyRoute) {
       router.replace('/verify-email' as never);
       return;
     }
 
-    if (user.emailVerified && inAuthGroup) {
+    if (isVerified && inAuthGroup) {
       router.replace((userProfile ? roleDashboardPaths[userProfile.role] : '/') as never);
     }
   }, [initialized, segments, user, userProfile]);

@@ -1,5 +1,5 @@
 import { Redirect } from 'expo-router';
 
-export default function SalesDashboardRoute() {
+export default function ManagerDashboardRoute() {
   return <Redirect href="/" />;
 }

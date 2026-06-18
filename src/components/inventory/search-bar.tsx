@@ -1,13 +1,23 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
 import { Search } from 'lucide-react-native';
 
-import { ThemedText } from '@/components/themed-text';
+type SearchBarProps = TextInputProps & {
+  containerStyle?: StyleProp<ViewStyle>;
+  placeholder: string;
+};
 
-export function SearchBar({ placeholder }: { placeholder: string }) {
+export function SearchBar({ containerStyle, placeholder, style, ...props }: SearchBarProps) {
   return (
-    <View style={styles.search}>
+    <View style={[styles.search, containerStyle]}>
       <Search color="#758197" size={18} strokeWidth={2.2} />
-      <ThemedText style={styles.placeholder}>{placeholder}</ThemedText>
+      <TextInput
+        accessibilityLabel={placeholder}
+        autoCapitalize="none"
+        placeholder={placeholder}
+        placeholderTextColor="#9aa3b2"
+        style={[styles.input, style]}
+        {...props}
+      />
     </View>
   );
 }
@@ -23,9 +33,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     flex: 1,
   },
-  placeholder: {
-    color: '#9aa3b2',
+  input: {
+    flex: 1,
+    color: '#101828',
     fontSize: 14,
     lineHeight: 18,
+    paddingVertical: 0,
   },
 });

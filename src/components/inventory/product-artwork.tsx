@@ -1,22 +1,29 @@
 import { StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
 import { Package } from 'lucide-react-native';
 
 export function ProductArtwork({
   category,
   accent,
   size = 'medium',
+  imageUri,
 }: {
   category: string;
   accent: string;
   size?: 'small' | 'medium';
+  imageUri?: string | null;
 }) {
   const dimensions = size === 'small' ? styles.small : styles.medium;
 
   return (
     <View style={[styles.art, dimensions, { backgroundColor: `${accent}1A` }]}>
-      <View style={[styles.device, { backgroundColor: accent }]}>
-        <Package color="#ffffff" size={size === 'small' ? 24 : 32} strokeWidth={2.2} />
-      </View>
+      {imageUri ? (
+        <Image source={{ uri: imageUri }} style={styles.image} contentFit="cover" />
+      ) : (
+        <View style={[styles.device, { backgroundColor: accent }]}>
+          <Package color="#ffffff" size={size === 'small' ? 24 : 32} strokeWidth={2.2} />
+        </View>
+      )}
     </View>
   );
 }
@@ -42,5 +49,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
   },
 });

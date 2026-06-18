@@ -22,7 +22,12 @@ export type Product = {
   costPrice: number;
   price: number;
   stock: number;
+  minimumStockLevel: number;
+  criticalStockLevel: number;
   description: string | null;
+  imageUri?: string | null;
+  soundUri?: string | null;
+  audioUri?: string | null;
   ownerId: string;
   ownerName: string;
   isActive: boolean;
@@ -46,10 +51,13 @@ export function getProductProfit(product: Product) {
   return product.price - product.costPrice;
 }
 
-export function formatProductPrice(price: number) {
+export const supportedCurrencies = ['ETB', 'USD', 'EUR', 'GBP', 'AED'] as const;
+export type SupportedCurrency = (typeof supportedCurrencies)[number];
+
+export function formatProductPrice(price: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 2,
   }).format(price);
 }

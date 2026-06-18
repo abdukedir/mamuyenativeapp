@@ -1,0 +1,34 @@
+type Category @table {
+  name: String!
+  description: String
+}
+
+type Supplier @table {
+  name: String!
+  contactEmail: String!
+  phone: String
+  address: String
+}
+
+type Location @table {
+  name: String!
+  address: String
+}
+
+type Product @table {
+  name: String!
+  sku: String!
+  currentStock: Int!
+  price: Float!
+  reorderPoint: Int
+  category: Category
+  supplier: Supplier
+  location: Location
+}
+
+type Transaction @table {
+  quantityChanged: Int!
+  type: String!
+  timestamp: Timestamp!
+  product: Product!
+}

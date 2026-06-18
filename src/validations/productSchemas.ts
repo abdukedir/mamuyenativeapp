@@ -41,6 +41,16 @@ export const productSchema = z.object({
     .int('Stock must be a whole number')
     .min(0, 'Stock cannot be negative')
     .max(999999, 'Stock is too high'),
+  minimumStockLevel: z.coerce
+    .number({ error: 'Enter a minimum stock level' })
+    .int('Minimum stock level must be a whole number')
+    .min(0, 'Minimum stock cannot be negative')
+    .max(999999, 'Minimum stock is too high'),
+  criticalStockLevel: z.coerce
+    .number({ error: 'Enter a critical stock level' })
+    .int('Critical stock level must be a whole number')
+    .min(0, 'Critical stock cannot be negative')
+    .max(999999, 'Critical stock is too high'),
   description: z.string().trim().max(500, 'Description must be 500 characters or fewer').optional(),
 });
 

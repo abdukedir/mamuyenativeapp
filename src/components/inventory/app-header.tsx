@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import type { ReactNode } from 'react';
 import { Bell, ChevronLeft, Menu, Search, SlidersHorizontal } from 'lucide-react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -12,6 +13,7 @@ type AppHeaderProps = {
   badge?: number;
   onLeftPress?: () => void;
   onRightPress?: () => void;
+  rightContent?: ReactNode;
 };
 
 export function AppHeader({
@@ -21,6 +23,7 @@ export function AppHeader({
   badge,
   onLeftPress,
   onRightPress,
+  rightContent,
 }: AppHeaderProps) {
   const theme = useTheme();
   const LeftIcon = left === 'back' ? ChevronLeft : Menu;
@@ -38,7 +41,9 @@ export function AppHeader({
         {title}
       </ThemedText>
 
-      {right === 'none' ? (
+      {rightContent ? (
+        <View style={styles.customRightWrap}>{rightContent}</View>
+      ) : right === 'none' ? (
         <View style={styles.rightWrap} />
       ) : (
         <Pressable onPress={handleRightPress} style={styles.rightWrap}>
@@ -73,6 +78,12 @@ const styles = StyleSheet.create({
   },
   rightWrap: {
     width: 40,
+    height: 40,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  customRightWrap: {
+    minWidth: 40,
     height: 40,
     alignItems: 'flex-end',
     justifyContent: 'center',

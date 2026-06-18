@@ -1,13 +1,16 @@
 import type { Timestamp } from 'firebase/firestore';
 
-export type UserRole = 'admin' | 'sales' | 'stock_manager';
+export type UserRole = 'admin' | 'member' | 'manager' | 'salesperson';
+export type StoredUserRole = UserRole | 'membe';
 
 export type UserProfile = {
   uid: string;
   email: string;
+  username: string;
+  usernameLower: string;
   fullName: string;
   phone: string | null;
-  role: UserRole;
+  role: StoredUserRole;
   profileImage: string | null;
   isVerified: boolean;
   isActive: boolean;
@@ -20,14 +23,38 @@ export type SerializableUserProfile = Omit<UserProfile, 'createdAt' | 'updatedAt
   updatedAt: string;
 };
 
-export const roleLabels: Record<UserRole, string> = {
+export const roleLabels: Record<StoredUserRole, string> = {
   admin: 'Admin',
-  sales: 'Sales',
-  stock_manager: 'Stock Manager',
+  membe: 'Member',
+  member: 'Member',
+  manager: 'Manager',
+  salesperson: 'Salesperson',
 };
 
-export const roleDescriptions: Record<UserRole, string> = {
+export const roleDescriptions: Record<StoredUserRole, string> = {
   admin: 'Controls all app work, users, roles, products, stock, and profile settings.',
-  sales: 'Browses products and handles sales work without product creation access.',
-  stock_manager: 'Manages products, inventory, and stock movement.',
+  membe: 'Controls all app work, users, roles, products, stock, and profile settings.',
+  member: 'Controls all app work, users, roles, products, stock, and profile settings.',
+  manager: 'Manages products, purchases, stock, expenses, suppliers, and reports.',
+  salesperson: 'Handles sales, customers, credits, and checkout work.',
 };
+
+function normalizeStoredRole(role: unknown) {
+  return typeof role === 'string' ? role.trim().toLowerCase() : '';
+}
+
+export function canAccessAllApp(userProfile: UserProfile | null | undefined) {
+  return Boolean(userProfile) && userProfile?.isActive !== false;
+}
+
+export function hasMemberAccess(userProfile: UserProfile | null | undefined) {
+  return canAccessAllApp(userProfile) && ['member', 'admin', 'membe'].includes(normalizeStoredRole(userProfile?.role));
+}
+
+export function isSalesperson(userProfile: UserProfile | null | undefined) {
+  return canAccessAllApp(userProfile) && normalizeStoredRole(userProfile?.role) === 'salesperson';
+}
+
+export function isAdminLikeUser(userProfile: UserProfile | null | undefined) {
+  return canAccessAllApp(userProfile);
+}
